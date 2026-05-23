@@ -4,7 +4,8 @@ This proxy is only for Alibaba Cloud Bailian / DashScope OpenAI-compatible chat
 completions. It adds Bailian explicit context-cache markers before forwarding
 requests to DashScope.
 
-`init_opencode.sh` configures a custom OpenCode provider:
+Configure a custom OpenCode provider in `opencode.json`
+(usually `~/.config/opencode/opencode.json`):
 
 ```json
 {
@@ -21,6 +22,8 @@ requests to DashScope.
 }
 ```
 
+See the [root README](../README.md) for full setup instructions.
+
 Other providers do not use this proxy. The proxy has a fixed upstream default:
 
 ```text
@@ -32,7 +35,7 @@ Only chat completions paths are forwarded upstream. Control endpoints under
 
 ## Lifecycle
 
-The `opencode/plugins/bailian-cache-proxy.js` plugin starts the proxy if it is
+The `plugins/bailian-cache-proxy.js` plugin starts the proxy if it is
 not already running and sends periodic heartbeats with the current OpenCode
 process pid. The proxy exits after all registered OpenCode pids are gone and the
 idle timeout elapses.
@@ -81,19 +84,19 @@ ${BAILIAN_CACHE_PROXY_USAGE_LOG:-${XDG_CACHE_HOME:-~/.cache}/bailian-cache-proxy
 ```bash
 # Today, grouped by model (default) — overall + per-model hit ratio,
 # avg duration, failure breakdown, streaming usage capture rate.
-node opencode/proxy/scripts/cache-stats.mjs
+node proxy/scripts/cache-stats.mjs
 
 # Time windows: --since 30m | 2h | 24h | YYYY-MM-DD | today | all
-node opencode/proxy/scripts/cache-stats.mjs --since 2h
+node proxy/scripts/cache-stats.mjs --since 2h
 
 # Group by status to see failure distribution
-node opencode/proxy/scripts/cache-stats.mjs --since today --by status
+node proxy/scripts/cache-stats.mjs --since today --by status
 
 # JSON output for piping into a dashboard / further processing
-node opencode/proxy/scripts/cache-stats.mjs --since today --json
+node proxy/scripts/cache-stats.mjs --since today --json
 
 # Different log path (e.g. ad-hoc analysis on a copied snapshot)
-node opencode/proxy/scripts/cache-stats.mjs --log /tmp/usage-snapshot.jsonl --since all
+node proxy/scripts/cache-stats.mjs --log /tmp/usage-snapshot.jsonl --since all
 ```
 
 ### Raw NDJSON access
