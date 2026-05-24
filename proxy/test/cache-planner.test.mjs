@@ -5,6 +5,7 @@ import {
   countCacheMarkers,
   DEFAULT_MARKER_FRACTIONS,
   planBailianCacheMarkers,
+  planBailianCacheMarkersWithDiagnostics,
 } from "../src/cache-planner.mjs"
 
 const findMarkerMessageIndexes = (planned) => {
@@ -51,6 +52,40 @@ describe("planBailianCacheMarkers", () => {
     assert.deepEqual(planned.messages[0].content[0].cache_control, { type: "ephemeral" })
     assert.equal(planned.messages[0].content[0].text, body.messages[0].content)
     assert.deepEqual(planned.messages[1].content[0].cache_control, { type: "ephemeral" })
+  })
+
+  test("returns low-sensitive marker diagnostics for comparing cache prefixes", () => {
+    const body = {
+      model: "qwen3.7-max",
+      messages: [
+        { role: "system", content: repeatedText("stable-system", 120) },
+        { role: "user", content: repeatedText("private-user-text", 40) },
+        { role: "assistant", content: repeatedText("private-assistant-text", 40) },
+        { role: "user", content: repeatedText("next-user-text", 40) },
+      ],
+    }
+
+    const { body: planned, diagnostics } = planBailianCacheMarkersWithDiagnostics(body, {
+      minCacheTokens: 16,
+    })
+
+    assert.equal(countCacheMarkers(planned), diagnostics.marker_count)
+    assert.equal(diagnostics.version, 1)
+    assert.equal(diagnostics.message_count, 4)
+    assert.equal(diagnostics.content_block_count, 4)
+    assert.match(diagnostics.messages_hash, /^[a-f0-9]{16}$/)
+    assert.equal(diagnostics.markers.length, diagnostics.marker_count)
+    assert.deepEqual(
+      diagnostics.markers.map((entry) => entry.message_index),
+      findMarkerMessageIndexes(planned),
+    )
+    for (const entry of diagnostics.markers) {
+      assert.match(entry.prefix_hash, /^[a-f0-9]{16}$/)
+      assert.equal(typeof entry.prefix_tokens, "number")
+      assert.ok(entry.prefix_tokens > 0)
+    }
+    assert.equal(JSON.stringify(diagnostics).includes("private-user-text"), false)
+    assert.equal(JSON.stringify(diagnostics).includes("private-assistant-text"), false)
   })
 
   test("strips existing markers and never emits more than four markers", () => {

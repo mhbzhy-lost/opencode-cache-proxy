@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { writeSync } from "node:fs"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -9,6 +10,7 @@ import {
   qwenPidFilePath,
   parseHookInput,
   runQwenKeepalive,
+  startProxyProcess,
   startQwenKeepalive,
   stopQwenKeepalive,
 } from "../src/qwen-lifecycle.mjs"
@@ -28,10 +30,65 @@ describe("Qwen Code lifecycle hook support", () => {
     assert.match(warnings[0], /invalid hook JSON/)
   })
 
+  test("does not leave an unread stderr pipe when child stderr logging is disabled", () => {
+    const spawnCalls = []
+    let unrefCalled = false
+
+    startProxyProcess({
+      spawnImpl: (command, args, options) => {
+        const child = {
+          pid: 1111,
+          stderr: {
+            on() {
+              throw new Error("stderr listener should not be attached")
+            },
+          },
+          on() {},
+          unref() {
+            unrefCalled = true
+          },
+        }
+        spawnCalls.push({ command, args, options })
+        return child
+      },
+      nodeBin: "node",
+      proxyEntry: "/repo/proxy/bin/bailian-cache-proxy.mjs",
+      logStderr: false,
+    })
+
+    assert.deepEqual(spawnCalls[0].options.stdio, ["ignore", "ignore", "ignore"])
+    assert.equal(unrefCalled, true)
+  })
+
+  test("can redirect child stderr to a log file without retaining a parent pipe", async () => {
+    const stateDir = await makeTempStateDir()
+    const stderrLogPath = join(stateDir, "qwen-cache-proxy.stderr.log")
+    const spawnCalls = []
+
+    startProxyProcess({
+      spawnImpl: (command, args, options) => {
+        writeSync(options.stdio[2], "proxy failed early\n")
+        const child = { pid: 1111, on() {}, unref() {} }
+        spawnCalls.push({ command, args, options })
+        return child
+      },
+      nodeBin: "node",
+      proxyEntry: "/repo/proxy/bin/bailian-cache-proxy.mjs",
+      logStderr: false,
+      stderrLogPath,
+    })
+
+    assert.equal(typeof spawnCalls[0].options.stdio[2], "number")
+    assert.equal(await readFile(stderrLogPath, "utf8"), "proxy failed early\n")
+
+    await rm(stateDir, { recursive: true, force: true })
+  })
+
   test("starts the proxy when unhealthy and records a Qwen keepalive pid", async () => {
     const stateDir = await makeTempStateDir()
     const spawnCalls = []
     const fetchCalls = []
+    const stderrListeners = []
 
     const result = await startQwenKeepalive({
       hookInput: { session_id: "session/with spaces" },
@@ -48,6 +105,11 @@ describe("Qwen Code lifecycle hook support", () => {
       spawnImpl: (command, args, options) => {
         const child = {
           pid: spawnCalls.length === 0 ? 1111 : 4242,
+          stderr: {
+            on(event) {
+              stderrListeners.push({ pid: child.pid, event })
+            },
+          },
           on() {},
           unref() {},
         }
@@ -78,7 +140,8 @@ describe("Qwen Code lifecycle hook support", () => {
     assert.equal(spawnCalls.length, 2)
     assert.deepEqual(spawnCalls[0].args, ["/repo/proxy/bin/bailian-cache-proxy.mjs"])
     assert.equal(spawnCalls[0].options.detached, true)
-    assert.deepEqual(spawnCalls[0].options.stdio, ["ignore", "ignore", "pipe"])
+    assert.deepEqual(spawnCalls[0].options.stdio.slice(0, 2), ["ignore", "ignore"])
+    assert.equal(typeof spawnCalls[0].options.stdio[2], "number")
     assert.deepEqual(spawnCalls[1].args, [
       "/repo/proxy/bin/bailian-cache-proxy-qwen-hook.mjs",
       "keepalive",
@@ -86,7 +149,10 @@ describe("Qwen Code lifecycle hook support", () => {
       result.pidFile,
     ])
     assert.equal(spawnCalls[1].options.detached, true)
-    assert.deepEqual(spawnCalls[1].options.stdio, ["ignore", "ignore", "pipe"])
+    assert.deepEqual(spawnCalls[1].options.stdio.slice(0, 2), ["ignore", "ignore"])
+    assert.equal(typeof spawnCalls[1].options.stdio[2], "number")
+    assert.deepEqual(stderrListeners, [])
+    assert.equal(await readFile(join(stateDir, "qwen-cache-proxy.stderr.log"), "utf8"), "")
 
     await rm(stateDir, { recursive: true, force: true })
   })
@@ -246,6 +312,7 @@ describe("Qwen Code lifecycle hook support", () => {
     const signalTarget = new EventEmitter()
     let intervalCallback
     let clearCalled = false
+    let unrefCalled = false
     let resolveBlockedFetch
     let fetchCalls = 0
 
@@ -266,7 +333,11 @@ describe("Qwen Code lifecycle hook support", () => {
       },
       setIntervalImpl: (callback) => {
         intervalCallback = callback
-        return { unref() {} }
+        return {
+          unref() {
+            unrefCalled = true
+          },
+        }
       },
       clearIntervalImpl: () => {
         clearCalled = true
@@ -276,6 +347,7 @@ describe("Qwen Code lifecycle hook support", () => {
     while (!intervalCallback) {
       await new Promise((resolve) => setImmediate(resolve))
     }
+    assert.equal(unrefCalled, false, "keepalive timer must keep its process alive")
 
     intervalCallback()
     intervalCallback()

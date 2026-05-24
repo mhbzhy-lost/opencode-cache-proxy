@@ -38,6 +38,7 @@ export const buildUsageRecord = ({
   proxy_pid = process.pid,
   opencode_pid = null,
   proxy_error = null,
+  cache_diagnostic = null,
 }) => {
   const details = usage?.prompt_tokens_details || usage?.input_tokens_details || {}
   const prompt_tokens = usage?.prompt_tokens ?? usage?.input_tokens ?? null
@@ -60,6 +61,7 @@ export const buildUsageRecord = ({
     cache_creation_input_tokens,
     request_id: request_id ?? null,
     proxy_error: proxy_error ?? null,
+    cache_diagnostic: cache_diagnostic ?? null,
   }
   record.cache_hit_ratio = computeCacheHitRatio(record)
   return record

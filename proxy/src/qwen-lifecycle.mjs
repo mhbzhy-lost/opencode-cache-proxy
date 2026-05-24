@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
+import { closeSync, openSync } from "node:fs"
 import { mkdir, open, readFile, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -99,14 +100,49 @@ const acquireStartLock = async (lockFile, openImpl = open) => {
   }
 }
 
-const attachChildLogging = (child, logger) => {
+const attachChildLogging = (child, logger, { logStderr = true } = {}) => {
   child.on?.("error", (err) => {
     logger.error?.(`bailian-cache-proxy qwen lifecycle: ${err.message || err}`)
   })
+  if (!logStderr) return
   child.stderr?.on?.("data", (chunk) => {
     const text = String(chunk).trim()
     if (text) logger.error?.(`bailian-cache-proxy qwen lifecycle stderr: ${text}`)
   })
+}
+
+const normalizeStdioForLogging = (stdio, logStderr, stderrTarget = "ignore") => {
+  if (logStderr) return stdio
+  if (typeof stdio === "string") return ["ignore", "ignore", stderrTarget]
+  if (Array.isArray(stdio)) {
+    const normalized = [...stdio]
+    if (stderrTarget !== "ignore" || normalized[2] === "pipe") {
+      normalized[2] = stderrTarget
+    }
+    return normalized
+  }
+  return stdio
+}
+
+const openStderrLogFile = (stderrLogPath, logger) => {
+  if (!stderrLogPath) return null
+  try {
+    return openSync(stderrLogPath, "a")
+  } catch (err) {
+    logger.warn?.(
+      `bailian-cache-proxy qwen lifecycle: cannot open stderr log: ${err.message || err}`,
+    )
+    return null
+  }
+}
+
+const closeStderrLogFile = (fd) => {
+  if (fd === null) return
+  try {
+    closeSync(fd)
+  } catch {
+    // The child has already been spawned; losing the parent fd close is non-fatal.
+  }
 }
 
 export const startProxyProcess = ({
@@ -115,13 +151,23 @@ export const startProxyProcess = ({
   proxyEntry = DEFAULT_PROXY_ENTRY,
   env = process.env,
   logger = console,
+  stdio = ["ignore", "ignore", "pipe"],
+  logStderr = true,
+  stderrLogPath,
 } = {}) => {
-  const child = spawnImpl(nodeBin, [proxyEntry], {
-    detached: true,
-    stdio: ["ignore", "ignore", "pipe"],
-    env,
-  })
-  attachChildLogging(child, logger)
+  const stderrLogFd = logStderr ? null : openStderrLogFile(stderrLogPath, logger)
+  const childStdio = normalizeStdioForLogging(stdio, logStderr, stderrLogFd ?? "ignore")
+  let child
+  try {
+    child = spawnImpl(nodeBin, [proxyEntry], {
+      detached: true,
+      stdio: childStdio,
+      env,
+    })
+  } finally {
+    closeStderrLogFile(stderrLogFd)
+  }
+  attachChildLogging(child, logger, { logStderr })
   child.unref?.()
   return child
 }
@@ -136,10 +182,22 @@ export const ensureProxyRunning = async ({
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   startupAttempts = DEFAULT_STARTUP_ATTEMPTS,
   startupPollMs = DEFAULT_STARTUP_POLL_MS,
+  stdio,
+  logStderr,
+  stderrLogPath,
 } = {}) => {
   if (await healthCheck({ fetchImpl, env })) return { status: "already-running" }
 
-  const child = startProxyProcess({ spawnImpl, nodeBin, proxyEntry, env, logger })
+  const child = startProxyProcess({
+    spawnImpl,
+    nodeBin,
+    proxyEntry,
+    env,
+    logger,
+    stdio,
+    logStderr,
+    stderrLogPath,
+  })
   let childExit = null
   child.once?.("exit", (code, signal) => {
     childExit = { code, signal }
@@ -185,6 +243,7 @@ export const startQwenKeepalive = async ({
   }
 
   await mkdir(dirname(pidFile), { recursive: true })
+  const stderrLogPath = join(dirname(pidFile), "qwen-cache-proxy.stderr.log")
   const lockFile = `${pidFile}.lock`
   const lockHandle = await acquireStartLock(lockFile, openLockFileImpl)
   if (!lockHandle) {
@@ -202,14 +261,23 @@ export const startQwenKeepalive = async ({
       sleep,
       startupAttempts,
       startupPollMs,
+      stdio: ["ignore", "ignore", "ignore"],
+      logStderr: false,
+      stderrLogPath,
     })
 
-    const child = spawnImpl(nodeBin, [keepaliveEntry, "keepalive", "--pid-file", pidFile], {
-      detached: true,
-      stdio: ["ignore", "ignore", "pipe"],
-      env,
-    })
-    attachChildLogging(child, logger)
+    const stderrLogFd = openStderrLogFile(stderrLogPath, logger)
+    let child
+    try {
+      child = spawnImpl(nodeBin, [keepaliveEntry, "keepalive", "--pid-file", pidFile], {
+        detached: true,
+        stdio: ["ignore", "ignore", stderrLogFd ?? "ignore"],
+        env,
+      })
+    } finally {
+      closeStderrLogFile(stderrLogFd)
+    }
+    attachChildLogging(child, logger, { logStderr: false })
     child.unref?.()
 
     const pid = child.pid ?? null
@@ -296,7 +364,6 @@ export const runQwenKeepalive = async ({
     const timer = setIntervalImpl(() => {
       void scheduleBeat()
     }, intervalMs)
-    timer.unref?.()
 
     let finished = false
     const finish = () => {

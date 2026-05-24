@@ -1,22 +1,30 @@
-# OpenCode Bailian Cache Proxy
+# OpenAI-Compatible Cache Proxy
 
-This proxy is only for Alibaba Cloud Bailian / DashScope OpenAI-compatible chat
-completions. It adds Bailian explicit context-cache markers before forwarding
-requests to DashScope. It can be used by OpenCode through the bundled plugin or
-by Qwen Code through the bundled SessionStart/SessionEnd hook helper.
+This proxy is for OpenAI-compatible chat-completions clients. It adds explicit
+`cache_control` markers before forwarding requests to an OpenAI-compatible
+upstream, then records cache usage metadata. The default upstream/profile is
+DashScope/Qwen-compatible, but the proxy is not tied to OpenCode or to a single
+client.
 
-Configure a custom OpenCode provider in `opencode.json`
-(usually `~/.config/opencode/opencode.json`):
+Configure clients with the bundled CLI:
+
+```bash
+node bin/bailian-cache-proxy-configure.mjs all
+```
+
+This updates OpenCode and Qwen Code settings idempotently while preserving
+unrelated providers and hooks. The OpenCode provider it writes to
+`opencode.json` (usually `~/.config/opencode/opencode.json`) looks like:
 
 ```json
 {
   "provider": {
-    "bailian-custom-cached": {
+    "openai-compatible-cached": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Bailian custom cached",
+      "name": "OpenAI-compatible cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
-        "apiKey": "{env:DASHSCOPE_API_KEY}"
+        "apiKey": "{env:OPENAI_COMPATIBLE_API_KEY}"
       }
     }
   }
@@ -25,7 +33,7 @@ Configure a custom OpenCode provider in `opencode.json`
 
 See the [root README](../README.md) for full setup instructions.
 
-Other providers do not use this proxy. The proxy has a fixed upstream default:
+Other providers do not use this proxy. The proxy has this upstream default:
 
 ```text
 https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -34,10 +42,10 @@ https://dashscope.aliyuncs.com/compatible-mode/v1
 Only chat completions paths are forwarded upstream. Control endpoints under
 `/__bailian_cache_proxy/*` stay local, and any other path returns `404`.
 
-Qwen Code can use the same proxy by pointing an OpenAI-compatible model
-provider at `http://127.0.0.1:48761/v1`. The proxy accepts both `/v1` and
-`/compatible-mode/v1` local request paths and maps them onto the configured
-upstream base path.
+Any client that can set an OpenAI-compatible base URL can use the same proxy by
+pointing at `http://127.0.0.1:48761/v1` or
+`http://127.0.0.1:48761/compatible-mode/v1`. The proxy maps both local paths
+onto the configured upstream base path.
 
 ## Lifecycle
 
@@ -52,17 +60,19 @@ elapses.
 
 ## Environment
 
-- `DASHSCOPE_API_KEY`: DashScope API key used by OpenCode and as proxy fallback
-  when the request has no `Authorization` header.
+- `OPENAI_COMPATIBLE_API_KEY`: generic upstream API key fallback when the
+  request has no `Authorization` header.
+- `DASHSCOPE_API_KEY`: DashScope-compatible API key fallback for existing
+  installs.
 - `BAILIAN_CODING_PLAN_API_KEY`: Alibaba Cloud Coding Plan API key fallback,
   useful for Qwen Code setups that target `https://coding.dashscope.aliyuncs.com/v1`.
 - `BAILIAN_CACHE_PROXY_PORT`: local proxy port, default `48761`.
-- `BAILIAN_UPSTREAM_BASE_URL`: upstream base URL, default China DashScope
-  compatible-mode endpoint.
+- `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL`: generic upstream base URL override.
+- `BAILIAN_UPSTREAM_BASE_URL`: historical upstream base URL alias, default
+  China DashScope compatible-mode endpoint.
 - `BAILIAN_CACHE_PROXY_MIN_TOKENS`: minimum estimated prefix tokens before
   adding cache markers, default `1024`.
-- `BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS`: Bailian content-block lookback
-  window, default `20`.
+- `BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS`: deprecated marker-planner alias.
 - `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES`: maximum accepted request body size,
   default `10485760`.
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
@@ -75,7 +85,7 @@ elapses.
 
 ## Thinking Mode Variants
 
-Each Qwen3 model is exposed twice in `bailian-custom-cached`:
+Each Qwen3 model is exposed twice in `openai-compatible-cached`:
 
 - `qwen3.6-plus` / `qwen3.6-flash` / `qwen3.7-max` — model defaults
   (`enable_thinking=true`, `thinking_budget=max`); model self-adapts depth.
@@ -141,7 +151,7 @@ jq -s '
 ### Record schema
 
 Each line carries: `ts`, `proxy_pid`, `opencode_pid` (currently always null),
-`model` (the OpenCode-facing alias including `-nothink` suffix when chosen),
+`model` (the client-facing alias including `-nothink` suffix when chosen),
 `status`, `duration_ms`, `is_stream`, `stream_usage_seen`, `prompt_tokens`,
 `completion_tokens`, `cached_tokens`, `cache_creation_input_tokens`,
 `request_id`, `proxy_error`, `cache_hit_ratio`. No prompt or completion text
@@ -151,8 +161,8 @@ model names.
 ### Concurrency safety
 
 Writes use POSIX `O_APPEND`; each line is < 1 KB which is well under
-`PIPE_BUF` (4096 B), so concurrent writers (multiple OpenCode processes
-sharing one proxy, or rare multi-proxy races) cannot interleave bytes.
+`PIPE_BUF` (4096 B), so concurrent writers (multiple client processes sharing
+one proxy, or rare multi-proxy races) cannot interleave bytes.
 Records exceeding the PIPE_BUF safety margin are rejected with a stderr WARN
 rather than risk torn writes.
 
@@ -162,11 +172,12 @@ The planner strips existing `cache_control` markers and emits at most four
 markers:
 
 - one early stable marker on the first eligible system/developer prefix
-- rolling tail markers so long OpenCode sessions refresh cache points near the
+- rolling tail markers so long sessions refresh cache points near the
   latest stable conversation prefix
 
-Bailian creates cache blocks after a response returns, so the first request may
-create cache while later requests should show cache reads in `usage`.
+Qwen/DashScope-compatible backends create cache blocks after a response
+returns, so the first request may create cache while later requests should show
+cache reads in `usage`.
 
 The proxy only accepts uncompressed JSON request bodies. Requests with
 `content-encoding` other than `identity` return `415`.

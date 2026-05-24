@@ -1,8 +1,8 @@
 /**
- * Starts the Bailian-only cache proxy and keeps it alive while OpenCode runs.
+ * Starts the OpenAI-compatible cache proxy and keeps it alive while OpenCode runs.
  *
- * The proxy is intentionally not a generic provider proxy: only the
- * `bailian-custom-cached` provider configured by init_opencode.sh points at it.
+ * Only the configured cached provider points at this local proxy; unrelated
+ * OpenCode providers keep using their original upstreams.
  */
 
 import { spawn } from "node:child_process"

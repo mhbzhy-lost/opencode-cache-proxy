@@ -2,7 +2,7 @@ import { createServer } from "node:http"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 
-import { planBailianCacheMarkers } from "./cache-planner.mjs"
+import { planBailianCacheMarkersWithDiagnostics } from "./cache-planner.mjs"
 import { createLifecycleTracker } from "./lifecycle.mjs"
 import { applyThinkModeRewrite } from "./think-mode-rewriter.mjs"
 import { ensureStreamUsageOption, extractUsage } from "./usage-extractor.mjs"
@@ -167,6 +167,7 @@ export const NOOP_USAGE_RECORDER = Object.freeze({
 })
 
 export const resolveDefaultApiKey = (env = process.env) =>
+  env.OPENAI_COMPATIBLE_API_KEY ||
   env.DASHSCOPE_API_KEY ||
   env.BAILIAN_API_KEY ||
   env.BAILIAN_CODING_PLAN_API_KEY ||
@@ -207,6 +208,7 @@ export const createBailianCacheProxy = ({
     const requestStart = now()
     let parsedRequestModel = null
     let isStream = false
+    let cacheDiagnostic = null
     let recorded = false
     const recordOnce = (overrides) => {
       if (recorded) return
@@ -220,6 +222,7 @@ export const createBailianCacheProxy = ({
           stream_usage_seen: false,
           usage: null,
           request_id: null,
+          cache_diagnostic: cacheDiagnostic,
           ...overrides,
         }),
       )
@@ -240,18 +243,20 @@ export const createBailianCacheProxy = ({
       let bodyBuffer = await readBody(request, maxBodyBytes)
       if (shouldTransformChatBody(request)) {
         const body = JSON.parse(bodyBuffer.toString("utf8"))
-        // 1. Resolve OpenCode-facing model alias (e.g. qwen3.6-flash-nothink)
+        // 1. Resolve client-facing model alias (e.g. qwen3.6-flash-nothink)
         //    to the real upstream model + any enable_thinking override BEFORE
         //    we plan cache markers; the cache planner only cares about the
         //    messages array and is alias-agnostic.
         const { body: rewrittenBody, alias } = applyThinkModeRewrite(body)
-        // The alias is what the user picked in OpenCode — keep it on the
+        // The alias is what the user picked in the client — keep it on the
         // usage record so cache-stats can split -nothink vs default cohorts.
         parsedRequestModel = alias
-        let planned = planBailianCacheMarkers(rewrittenBody, cacheOptions)
+        const plannedResult = planBailianCacheMarkersWithDiagnostics(rewrittenBody, cacheOptions)
+        let planned = plannedResult.body
+        cacheDiagnostic = plannedResult.diagnostics
         // 2. Inject stream_options.include_usage so streaming responses still
         //    expose token usage in their trailing SSE frame. Without this,
-        //    every OpenCode AI-SDK call (defaults to stream=true) would log
+        //    every streaming client call would log
         //    no usage and the cache hit-rate dataset would be empty.
         planned = ensureStreamUsageOption(planned)
         isStream = planned?.stream === true

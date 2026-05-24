@@ -1,5 +1,5 @@
 /**
- * Map an OpenCode-facing model alias to the real upstream model id and the
+ * Map a client-facing model alias to the real upstream model id and the
  * thinking-mode override (if any) that the alias implies.
  *
  * Convention:
@@ -7,7 +7,7 @@
  *                            to enable_thinking=true with max budget)
  *   <real-model>-nothink   → upstream <real-model>, force enable_thinking=false
  *
- * The OpenCode side sees both the plain alias and the -nothink alias in the
+ * The client side sees both the plain alias and the -nothink alias in the
  * provider model list, so the user can pick "with thinking" or "no thinking"
  * per chat without ever needing to know what enable_thinking is.
  */
@@ -35,7 +35,7 @@ export const resolveThinkMode = (modelName) => {
 /**
  * Apply the alias rewrite + enable_thinking override to a chat-completions
  * request body. Returns a new object; the original is left untouched. The
- * `alias` returned is the OpenCode-facing name and should be propagated to
+ * `alias` returned is the client-facing name and should be propagated to
  * usage records so stats can compare -nothink vs default cohorts.
  */
 export const applyThinkModeRewrite = (body) => {

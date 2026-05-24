@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 const DEFAULT_MIN_CACHE_TOKENS = 1024
 const DEFAULT_MAX_MARKERS = 4
 // Token-fraction positions for the two intermediate markers between the
@@ -15,9 +17,21 @@ const TEXT_LIKE_PART_TYPES = new Set(["text", "input_text"])
 
 const marker = Object.freeze({ type: "ephemeral" })
 
+const shortHash = (value) => createHash("sha256").update(value).digest("hex").slice(0, 16)
+
 const cloneJson = (value) => {
   if (value === undefined) return undefined
   return JSON.parse(JSON.stringify(value))
+}
+
+const stableStringify = (value) => {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
+  const entries = Object.entries(value)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+  return `{${entries.join(",")}}`
 }
 
 const estimateTokens = (value) => {
@@ -146,11 +160,18 @@ export const countCacheMarkers = (body) => {
 }
 
 export const planBailianCacheMarkers = (body, options = {}) => {
-  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return body
+  return planBailianCacheMarkersWithDiagnostics(body, options).body
+}
+
+export const planBailianCacheMarkersWithDiagnostics = (body, options = {}) => {
+  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) {
+    return { body, diagnostics: null }
+  }
 
   const planned = cloneJson(body)
   const blocks = []
   let prefixTokens = 0
+  const prefixParts = []
 
   planned.messages = planned.messages.map((message, messageIndex) => {
     if (!message || typeof message !== "object") return message
@@ -162,11 +183,13 @@ export const planBailianCacheMarkers = (body, options = {}) => {
     const role = String(clonedMessage.role || "")
     clonedMessage.content.forEach((part, partIndex) => {
       prefixTokens += estimateTokens(part)
+      prefixParts.push(stableStringify({ role, content: part }))
       blocks.push({
         role,
         messageIndex,
         partIndex,
         prefixTokens,
+        prefixHash: shortHash(prefixParts.join("\n")),
         contentIndex: blocks.length,
         canMark: CACHEABLE_ROLES.has(role) && canMarkPart(part),
       })
@@ -175,6 +198,7 @@ export const planBailianCacheMarkers = (body, options = {}) => {
     return clonedMessage
   })
 
+  const messagesHash = shortHash(stableStringify(planned.messages))
   const selectedIndexes = new Set(selectMarkerContentIndexes(blocks, options))
   for (const block of blocks) {
     if (selectedIndexes.has(block.contentIndex)) {
@@ -182,5 +206,28 @@ export const planBailianCacheMarkers = (body, options = {}) => {
     }
   }
 
-  return planned
+  const markers = blocks
+    .filter((block) => selectedIndexes.has(block.contentIndex))
+    .map((block) => ({
+      role: block.role,
+      message_index: block.messageIndex,
+      part_index: block.partIndex,
+      content_index: block.contentIndex,
+      prefix_tokens: block.prefixTokens,
+      prefix_hash: block.prefixHash,
+    }))
+
+  return {
+    body: planned,
+    diagnostics: {
+      version: 1,
+      message_count: planned.messages.length,
+      content_block_count: blocks.length,
+      total_estimated_tokens: prefixTokens,
+      marker_count: markers.length,
+      messages_hash: messagesHash,
+      marker_selection_hash: shortHash(stableStringify(markers)),
+      markers,
+    },
+  }
 }

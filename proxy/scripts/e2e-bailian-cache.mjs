@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * E2E verification: prove that the local Bailian cache proxy actually wires
- * explicit context caching against the real DashScope (or token-plan) upstream.
+ * E2E verification: prove that the local OpenAI-compatible cache proxy wires
+ * explicit context caching against a real DashScope/Qwen-compatible upstream.
  *
  * Manual run only — not part of `npm test`. Requires:
- *   opencode/proxy/.env with DASHSCOPE_API_KEY and DASHSCOPE_BASE_URL.
+ *   proxy/.env with OPENAI_COMPATIBLE_API_KEY or DASHSCOPE_API_KEY.
  *
  * Cost budget: ~2 calls of qwen-turbo with ≈1100-token prompt and 8 max_tokens.
  *
@@ -30,14 +30,16 @@ const envPath = join(here, "..", ".env")
   const result = loadEnvFile(envPath)
   if (!result.loaded) {
     const reason = result.error ? `unreadable: ${result.error.message}` : "not found"
-    console.error(`❌ ${envPath} ${reason}; e2e cannot run without DASHSCOPE_API_KEY`)
+    console.error(`❌ ${envPath} ${reason}; e2e cannot run without an API key`)
     process.exit(1)
   }
 }
 
-const apiKey = process.env.DASHSCOPE_API_KEY
+const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY || process.env.DASHSCOPE_API_KEY
 const upstreamBaseUrl =
-  process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  process.env.OPENAI_COMPATIBLE_UPSTREAM_BASE_URL ||
+  process.env.DASHSCOPE_BASE_URL ||
+  "https://dashscope.aliyuncs.com/compatible-mode/v1"
 const model = process.env.DASHSCOPE_E2E_MODEL || "qwen3.6-flash"
 const cacheCreationWaitMs = Number(process.env.DASHSCOPE_E2E_WAIT_MS || 8000)
 const fetchTimeoutMs = Number(process.env.DASHSCOPE_E2E_FETCH_TIMEOUT_MS || 30_000)
@@ -65,7 +67,7 @@ const countUsageLines = async () => {
 const usageLogBaseline = await countUsageLines()
 
 if (!apiKey) {
-  console.error("❌ DASHSCOPE_API_KEY missing in .env")
+  console.error("❌ OPENAI_COMPATIBLE_API_KEY or DASHSCOPE_API_KEY missing in .env")
   process.exit(1)
 }
 

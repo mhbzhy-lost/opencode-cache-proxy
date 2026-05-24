@@ -7,11 +7,9 @@ import { loadEnvFile } from "../src/load-env.mjs"
 import { createBailianCacheProxy } from "../src/server.mjs"
 import { createUsageRecorder } from "../src/usage-recorder.mjs"
 
-// The proxy is normally spawned by the OpenCode plugin and inherits whatever
-// env that parent process happened to have. OpenCode launched from a desktop
-// shortcut won't read ~/.zshrc, so DASHSCOPE_API_KEY / DASHSCOPE_BASE_URL may
-// be missing from the inherited env. Load the skill-local .env directly so the
-// proxy is self-sufficient regardless of how OpenCode itself was started.
+// The proxy is normally spawned by a client integration and inherits whatever
+// env that parent process happened to have. GUI-launched clients may not read
+// ~/.zshrc, so load the proxy-local .env directly.
 const here = dirname(fileURLToPath(import.meta.url))
 const envPath = join(here, "..", ".env")
 const { loaded, vars, error } = loadEnvFile(envPath)
@@ -42,12 +40,12 @@ const envNumber = (name, fallback) => {
 const host = process.env.BAILIAN_CACHE_PROXY_HOST || "127.0.0.1"
 const port = envNumber("BAILIAN_CACHE_PROXY_PORT", 48761)
 
-// Accept DASHSCOPE_BASE_URL as a fallback for BAILIAN_UPSTREAM_BASE_URL: the
-// .env file uses the dashscope-namespaced var because users copy it from
-// dashscope's onboarding doc; the proxy historically only honoured its own
-// BAILIAN_-prefixed name.
+// Prefer the generic upstream name and keep historical DashScope/Bailian names
+// as compatibility aliases for existing installs.
 const upstreamBaseUrl =
-  process.env.BAILIAN_UPSTREAM_BASE_URL || process.env.DASHSCOPE_BASE_URL
+  process.env.OPENAI_COMPATIBLE_UPSTREAM_BASE_URL ||
+  process.env.BAILIAN_UPSTREAM_BASE_URL ||
+  process.env.DASHSCOPE_BASE_URL
 
 // Production recorder writes to ~/.cache/bailian-cache-proxy/usage.jsonl.
 // createBailianCacheProxy itself defaults to a no-op recorder so unit tests

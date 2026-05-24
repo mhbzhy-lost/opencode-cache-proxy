@@ -1,16 +1,19 @@
-# opencode-cache-proxy
+# OpenAI-Compatible Cache Proxy
 
-Local reverse proxy for Alibaba Cloud Bailian (DashScope) chat completions,
-with an [OpenCode](https://opencode.ai) plugin and a
-[Qwen Code](https://github.com/QwenLM/qwen-code) hook helper. It intercepts
-OpenAI-compatible requests, injects Bailian explicit context-cache markers
-before forwarding, records usage metrics, and provides thinking-mode model
-aliases.
+Local reverse proxy for OpenAI-compatible chat-completions clients. It injects
+explicit `cache_control` markers before forwarding, records usage metrics, and
+provides model-alias helpers such as Qwen thinking-mode variants.
+
+The current default profile targets DashScope / Alibaba Cloud Qwen-compatible
+endpoints because they support OpenAI-compatible chat completions plus explicit
+context cache markers. The repository is no longer scoped to OpenCode only:
+OpenCode and Qwen Code are bundled integrations, and other clients can use the
+same local `/v1` or `/compatible-mode/v1` proxy URL.
 
 ## What it does
 
 ```
-OpenCode / Qwen Code ──► localhost:48761 ──► Bailian / DashScope
+OpenAI-compatible client ──► localhost:48761 ──► OpenAI-compatible upstream
                               │
                               ├─ Injects cache_control markers on stable prefixes
                               ├─ Rewrites -nothink model aliases
@@ -23,6 +26,7 @@ OpenCode / Qwen Code ──► localhost:48761 ──► Bailian / DashScope
 ```
 proxy/
   bin/        Proxy entry point (bailian-cache-proxy.mjs)
+              Client config entry (bailian-cache-proxy-configure.mjs)
               Qwen hook entry (bailian-cache-proxy-qwen-hook.mjs)
   src/        Server, cache planner, lifecycle, usage recorder
   test/       Unit tests (Node built-in test runner)
@@ -35,8 +39,11 @@ plugins/
 ## Prerequisites
 
 - **Node.js** >= 20 (uses `node:test`, `fetch`, ESM)
-- **OpenCode** ([install](https://opencode.ai)) and/or **Qwen Code**
-- **DashScope API key** or **Alibaba Cloud Coding Plan API key**
+- **OpenCode** ([install](https://opencode.ai)), **Qwen Code**, or another
+  OpenAI-compatible client
+- API credentials for an upstream that accepts the forwarded requests. For the
+  default Qwen/DashScope profile, use `OPENAI_COMPATIBLE_API_KEY`,
+  `DASHSCOPE_API_KEY`, or `BAILIAN_CODING_PLAN_API_KEY`.
 
 ## Setup
 
@@ -55,14 +62,38 @@ cd opencode-cache-proxy
 
 ```bash
 cp proxy/.env.example proxy/.env
-# Edit proxy/.env — set DASHSCOPE_API_KEY or BAILIAN_CODING_PLAN_API_KEY
+# Edit proxy/.env — set OPENAI_COMPATIBLE_API_KEY or a supported legacy alias
 ```
 
 `.env` is gitignored. The proxy loads it on startup so it works even when
-OpenCode or Qwen Code is launched from a GUI or a shell without exported API
-credentials.
+the client is launched from a GUI or a shell without exported API credentials.
 
 ### 3. Configure a client
+
+Run the bundled configurator from this repository:
+
+```bash
+# Configure both OpenCode and Qwen Code
+node proxy/bin/bailian-cache-proxy-configure.mjs all
+
+# Or configure one client
+node proxy/bin/bailian-cache-proxy-configure.mjs opencode
+node proxy/bin/bailian-cache-proxy-configure.mjs qwen
+```
+
+The configurator is idempotent. It preserves unrelated providers/hooks and
+only manages this proxy's provider, plugin, and Qwen lifecycle hooks.
+
+For host repositories that already manage an OpenCode plugin directory, install
+the plugin/proxy symlinks there instead of editing `opencode.json.plugin`:
+
+```bash
+node proxy/bin/bailian-cache-proxy-configure.mjs opencode \
+  --opencode-plugin-mode symlink \
+  --opencode-plugin-dir /absolute/path/to/opencode/plugins
+```
+
+The JSON below shows what the configurator writes.
 
 #### OpenCode provider
 
@@ -72,12 +103,12 @@ Add a custom provider in your `opencode.json` (usually at
 ```jsonc
 {
   "provider": {
-    "bailian-custom-cached": {
+    "openai-compatible-cached": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Bailian custom cached",
+      "name": "OpenAI-compatible cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
-        "apiKey": "{env:DASHSCOPE_API_KEY}"
+        "apiKey": "{env:OPENAI_COMPATIBLE_API_KEY}"
       },
       "models": {
         "qwen3.6-plus":           { "name": "Qwen 3.6 Plus" },
@@ -92,8 +123,10 @@ Add a custom provider in your `opencode.json` (usually at
 }
 ```
 
-The `baseURL` points at the local proxy. Only `bailian-custom-cached` goes
-through the proxy; other OpenCode providers are unaffected.
+The `baseURL` points at the local proxy. Only `openai-compatible-cached` goes
+through the proxy; other OpenCode providers are unaffected. Host repositories
+that need DashScope-specific defaults can run the configurator with
+`--opencode-api-key-env DASHSCOPE_API_KEY`.
 
 #### Qwen Code provider
 
@@ -107,9 +140,19 @@ upstream path.
   "modelProviders": {
     "openai": [
       {
-        "id": "qwen3-coder-plus",
-        "name": "Qwen 3 Coder Plus (cached)",
-        "envKey": "BAILIAN_CODING_PLAN_API_KEY",
+        "id": "qwen3.6-plus",
+        "name": "Qwen 3.6 Plus (cached)",
+        "envKey": "BAILIAN_TOKEN_PLAN_API_KEY",
+        "baseUrl": "http://127.0.0.1:48761/v1",
+        "generationConfig": {
+          "enableCacheControl": true,
+          "contextWindowSize": 1000000
+        }
+      },
+      {
+        "id": "qwen3.7-max",
+        "name": "Qwen 3.7 Max (cached)",
+        "envKey": "BAILIAN_TOKEN_PLAN_API_KEY",
         "baseUrl": "http://127.0.0.1:48761/v1",
         "generationConfig": {
           "enableCacheControl": true,
@@ -126,6 +169,13 @@ upstream path.
 }
 ```
 
+For a generic OpenAI-compatible upstream, set:
+
+```sh
+OPENAI_COMPATIBLE_UPSTREAM_BASE_URL=https://example.invalid/v1
+OPENAI_COMPATIBLE_API_KEY=sk-...
+```
+
 For Alibaba Cloud Coding Plan, set:
 
 ```sh
@@ -134,7 +184,8 @@ BAILIAN_CODING_PLAN_API_KEY=sk-sp-...
 ```
 
 For DashScope compatible-mode, keep the default upstream
-`https://dashscope.aliyuncs.com/compatible-mode/v1` and use `DASHSCOPE_API_KEY`.
+`https://dashscope.aliyuncs.com/compatible-mode/v1` and use either
+`OPENAI_COMPATIBLE_API_KEY` or `DASHSCOPE_API_KEY`.
 
 ### 4. Start the proxy
 
@@ -272,10 +323,12 @@ jq -c 'select(.status >= 400)' "$LOG"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DASHSCOPE_API_KEY` | — | DashScope API key fallback |
+| `OPENAI_COMPATIBLE_API_KEY` | — | Generic upstream API key fallback |
+| `DASHSCOPE_API_KEY` | — | DashScope-compatible API key fallback |
 | `BAILIAN_CODING_PLAN_API_KEY` | — | Alibaba Cloud Coding Plan API key fallback |
 | `BAILIAN_CACHE_PROXY_PORT` | `48761` | Local listen port |
-| `BAILIAN_UPSTREAM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Upstream endpoint |
+| `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL` | — | Generic upstream endpoint override |
+| `BAILIAN_UPSTREAM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Historical upstream endpoint alias |
 | `BAILIAN_CACHE_PROXY_MIN_TOKENS` | `1024` | Min prefix tokens before adding cache markers |
 | `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES` | `10485760` | Max request body size |
 | `BAILIAN_CACHE_PROXY_USAGE_LOG` | `~/.cache/bailian-cache-proxy/usage.jsonl` | Usage log path |

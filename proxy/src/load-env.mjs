@@ -10,8 +10,8 @@
  * Used by:
  *   - bin/bailian-cache-proxy.mjs   so the proxy is self-sufficient when
  *                                   spawned by the OpenCode plugin (the
- *                                   OpenCode process env may not carry
- *                                   DASHSCOPE_API_KEY / DASHSCOPE_BASE_URL).
+ *                                   client process env may not carry
+ *                                   OPENAI_COMPATIBLE_API_KEY / upstream URL).
  *   - scripts/e2e-bailian-cache.mjs so manual e2e runs pick up the same .env.
  */
 

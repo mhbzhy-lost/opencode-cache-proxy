@@ -74,6 +74,17 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("uses OpenAI-compatible API key as the first authorization fallback", () => {
+    assert.equal(
+      resolveDefaultApiKey({
+        OPENAI_COMPATIBLE_API_KEY: "sk-compatible",
+        DASHSCOPE_API_KEY: "sk-dashscope",
+        BAILIAN_CODING_PLAN_API_KEY: "sk-sp-test",
+      }),
+      "sk-compatible",
+    )
+  })
+
   test("uses Alibaba Cloud Coding Plan API key as authorization fallback", async () => {
     let receivedAuthorization
     const upstream = createServer(async (request, response) => {
@@ -435,7 +446,7 @@ describe("createBailianCacheProxy", () => {
           body: JSON.stringify({
             model: "qwen3.6-plus",
             stream: true,
-            messages: [{ role: "user", content: "go" }],
+            messages: [{ role: "user", content: "go ".repeat(5000) }],
           }),
         },
       )
@@ -456,6 +467,12 @@ describe("createBailianCacheProxy", () => {
       assert.equal(record.cached_tokens, 288)
       assert.equal(record.cache_hit_ratio, 0.96)
       assert.equal(record.request_id, "chatcmpl-stream")
+      assert.equal(record.cache_diagnostic.version, 1)
+      assert.match(record.cache_diagnostic.messages_hash, /^[a-f0-9]{16}$/)
+      assert.equal(record.cache_diagnostic.marker_count, 1)
+      assert.equal(record.cache_diagnostic.markers.length, 1)
+      assert.match(record.cache_diagnostic.markers[0].prefix_hash, /^[a-f0-9]{16}$/)
+      assert.equal(JSON.stringify(record.cache_diagnostic).includes("go"), false)
     } finally {
       await close(proxy.server)
       await close(upstream)
