@@ -2,7 +2,8 @@
 
 This proxy is only for Alibaba Cloud Bailian / DashScope OpenAI-compatible chat
 completions. It adds Bailian explicit context-cache markers before forwarding
-requests to DashScope.
+requests to DashScope. It can be used by OpenCode through the bundled plugin or
+by Qwen Code through the bundled SessionStart/SessionEnd hook helper.
 
 Configure a custom OpenCode provider in `opencode.json`
 (usually `~/.config/opencode/opencode.json`):
@@ -33,17 +34,28 @@ https://dashscope.aliyuncs.com/compatible-mode/v1
 Only chat completions paths are forwarded upstream. Control endpoints under
 `/__bailian_cache_proxy/*` stay local, and any other path returns `404`.
 
+Qwen Code can use the same proxy by pointing an OpenAI-compatible model
+provider at `http://127.0.0.1:48761/v1`. The proxy accepts both `/v1` and
+`/compatible-mode/v1` local request paths and maps them onto the configured
+upstream base path.
+
 ## Lifecycle
 
 The `plugins/bailian-cache-proxy.js` plugin starts the proxy if it is
 not already running and sends periodic heartbeats with the current OpenCode
-process pid. The proxy exits after all registered OpenCode pids are gone and the
-idle timeout elapses.
+process pid. For Qwen Code, use
+`bin/bailian-cache-proxy-qwen-hook.mjs start` on `SessionStart` and
+`bin/bailian-cache-proxy-qwen-hook.mjs stop` on `SessionEnd`; the start command
+spawns a per-session keepalive process that sends the same heartbeat protocol.
+The proxy exits after all registered client pids are gone and the idle timeout
+elapses.
 
 ## Environment
 
-- `DASHSCOPE_API_KEY`: Bailian API key used by OpenCode and as proxy fallback
+- `DASHSCOPE_API_KEY`: DashScope API key used by OpenCode and as proxy fallback
   when the request has no `Authorization` header.
+- `BAILIAN_CODING_PLAN_API_KEY`: Alibaba Cloud Coding Plan API key fallback,
+  useful for Qwen Code setups that target `https://coding.dashscope.aliyuncs.com/v1`.
 - `BAILIAN_CACHE_PROXY_PORT`: local proxy port, default `48761`.
 - `BAILIAN_UPSTREAM_BASE_URL`: upstream base URL, default China DashScope
   compatible-mode endpoint.
@@ -54,6 +66,12 @@ idle timeout elapses.
 - `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES`: maximum accepted request body size,
   default `10485760`.
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
+- `QWEN_BAILIAN_CACHE_PROXY=0`: disables Qwen hook-managed proxy startup.
+- `BAILIAN_CACHE_PROXY_STATE_DIR`: Qwen hook pidfile directory.
+- `QWEN_BAILIAN_CACHE_PROXY_HEARTBEAT_MS`: Qwen keepalive heartbeat interval,
+  default `15000`.
+- `QWEN_BAILIAN_CACHE_PROXY_MAX_STDIN_BYTES`: maximum accepted Qwen hook JSON
+  input size, default `65536`.
 
 ## Thinking Mode Variants
 

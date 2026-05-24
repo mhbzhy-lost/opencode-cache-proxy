@@ -72,8 +72,16 @@ const buildUpstreamUrl = (requestUrl, upstreamBaseUrl) => {
   const upstreamPath = upstreamBase.pathname.replace(/\/$/, "")
   let requestPath = incoming.pathname
 
-  if (requestPath.startsWith(upstreamPath)) {
-    requestPath = requestPath.slice(upstreamPath.length)
+  const candidatePrefixes = [
+    upstreamPath,
+    "/compatible-mode/v1",
+    "/v1",
+  ].filter(Boolean)
+  for (const prefix of [...new Set(candidatePrefixes)]) {
+    if (requestPath === prefix || requestPath.startsWith(`${prefix}/`)) {
+      requestPath = requestPath.slice(prefix.length)
+      break
+    }
   }
   if (!requestPath.startsWith("/")) requestPath = `/${requestPath}`
 
@@ -158,9 +166,15 @@ export const NOOP_USAGE_RECORDER = Object.freeze({
   filePath: null,
 })
 
+export const resolveDefaultApiKey = (env = process.env) =>
+  env.DASHSCOPE_API_KEY ||
+  env.BAILIAN_API_KEY ||
+  env.BAILIAN_CODING_PLAN_API_KEY ||
+  ""
+
 export const createBailianCacheProxy = ({
   upstreamBaseUrl = DEFAULT_UPSTREAM_BASE_URL,
-  apiKey = process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || "",
+  apiKey = resolveDefaultApiKey(),
   cacheOptions = {},
   lifecycle = true,
   idleExitMs = DEFAULT_IDLE_EXIT_MS,

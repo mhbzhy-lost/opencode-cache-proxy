@@ -1,19 +1,21 @@
 # opencode-cache-proxy
 
-Local reverse proxy + [OpenCode](https://opencode.ai) plugin for Alibaba Cloud
-Bailian (DashScope) chat completions. Intercepts requests, injects Bailian
-explicit context-cache markers before forwarding, records usage metrics, and
-provides thinking-mode model aliases.
+Local reverse proxy for Alibaba Cloud Bailian (DashScope) chat completions,
+with an [OpenCode](https://opencode.ai) plugin and a
+[Qwen Code](https://github.com/QwenLM/qwen-code) hook helper. It intercepts
+OpenAI-compatible requests, injects Bailian explicit context-cache markers
+before forwarding, records usage metrics, and provides thinking-mode model
+aliases.
 
 ## What it does
 
 ```
-OpenCode ──► localhost:48761 ──► dashscope.aliyuncs.com
-                  │
-                  ├─ Injects cache_control markers on stable prefixes
-                  ├─ Rewrites -nothink model aliases
-                  ├─ Extracts & records token usage to JSONL
-                  └─ Lifecycle: auto-exits when all OpenCode pids gone
+OpenCode / Qwen Code ──► localhost:48761 ──► Bailian / DashScope
+                              │
+                              ├─ Injects cache_control markers on stable prefixes
+                              ├─ Rewrites -nothink model aliases
+                              ├─ Extracts & records token usage to JSONL
+                              └─ Lifecycle: OpenCode plugin or Qwen hooks keep it alive
 ```
 
 ## Repository layout
@@ -21,6 +23,7 @@ OpenCode ──► localhost:48761 ──► dashscope.aliyuncs.com
 ```
 proxy/
   bin/        Proxy entry point (bailian-cache-proxy.mjs)
+              Qwen hook entry (bailian-cache-proxy-qwen-hook.mjs)
   src/        Server, cache planner, lifecycle, usage recorder
   test/       Unit tests (Node built-in test runner)
   scripts/    CLI tools (cache-stats, e2e)
@@ -32,8 +35,8 @@ plugins/
 ## Prerequisites
 
 - **Node.js** >= 20 (uses `node:test`, `fetch`, ESM)
-- **OpenCode** ([install](https://opencode.ai))
-- **DashScope API key** ([Bailian console](https://bailian.console.aliyun.com/))
+- **OpenCode** ([install](https://opencode.ai)) and/or **Qwen Code**
+- **DashScope API key** or **Alibaba Cloud Coding Plan API key**
 
 ## Setup
 
@@ -52,13 +55,16 @@ cd opencode-cache-proxy
 
 ```bash
 cp proxy/.env.example proxy/.env
-# Edit proxy/.env — at minimum set DASHSCOPE_API_KEY
+# Edit proxy/.env — set DASHSCOPE_API_KEY or BAILIAN_CODING_PLAN_API_KEY
 ```
 
 `.env` is gitignored. The proxy loads it on startup so it works even when
-OpenCode is launched from a GUI (no shell env).
+OpenCode or Qwen Code is launched from a GUI or a shell without exported API
+credentials.
 
-### 3. Configure OpenCode provider
+### 3. Configure a client
+
+#### OpenCode provider
 
 Add a custom provider in your `opencode.json` (usually at
 `~/.config/opencode/opencode.json`):
@@ -89,6 +95,47 @@ Add a custom provider in your `opencode.json` (usually at
 The `baseURL` points at the local proxy. Only `bailian-custom-cached` goes
 through the proxy; other OpenCode providers are unaffected.
 
+#### Qwen Code provider
+
+Qwen Code's OpenAI-compatible provider can point at the same local proxy. This
+example uses the standard `/v1` local path; the proxy maps it to the configured
+upstream path.
+
+```jsonc
+// ~/.qwen/settings.json
+{
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "qwen3-coder-plus",
+        "name": "Qwen 3 Coder Plus (cached)",
+        "envKey": "BAILIAN_CODING_PLAN_API_KEY",
+        "baseUrl": "http://127.0.0.1:48761/v1",
+        "generationConfig": {
+          "enableCacheControl": true,
+          "contextWindowSize": 1000000
+        }
+      }
+    ]
+  },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  }
+}
+```
+
+For Alibaba Cloud Coding Plan, set:
+
+```sh
+BAILIAN_UPSTREAM_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
+BAILIAN_CODING_PLAN_API_KEY=sk-sp-...
+```
+
+For DashScope compatible-mode, keep the default upstream
+`https://dashscope.aliyuncs.com/compatible-mode/v1` and use `DASHSCOPE_API_KEY`.
+
 ### 4. Start the proxy
 
 **Option A — OpenCode plugin (recommended).** The plugin auto-starts the proxy
@@ -113,8 +160,45 @@ curl -s http://127.0.0.1:48761/__bailian_cache_proxy/health
 # {"ok":true,"activePids":[...]}
 ```
 
-**Option B — Manual start.** Run without the plugin — useful for debugging or
-non-OpenCode setups:
+**Option B — Qwen Code hooks.** Add SessionStart and SessionEnd hooks that call
+the helper. SessionStart starts the proxy if needed and spawns a per-session
+keepalive process; SessionEnd stops that keepalive so the proxy can idle-exit.
+
+```jsonc
+// ~/.qwen/settings.json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node <absolute-path-to>/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-qwen-hook.mjs start",
+            "name": "bailian-cache-proxy-start",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node <absolute-path-to>/opencode-cache-proxy/proxy/bin/bailian-cache-proxy-qwen-hook.mjs stop",
+            "name": "bailian-cache-proxy-stop",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Disable Qwen hook-managed startup with `QWEN_BAILIAN_CACHE_PROXY=0`.
+
+**Option C — Manual start.** Run without plugin/hooks — useful for debugging:
 
 ```bash
 node proxy/bin/bailian-cache-proxy.mjs
@@ -188,7 +272,8 @@ jq -c 'select(.status >= 400)' "$LOG"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DASHSCOPE_API_KEY` | — | DashScope API key (required) |
+| `DASHSCOPE_API_KEY` | — | DashScope API key fallback |
+| `BAILIAN_CODING_PLAN_API_KEY` | — | Alibaba Cloud Coding Plan API key fallback |
 | `BAILIAN_CACHE_PROXY_PORT` | `48761` | Local listen port |
 | `BAILIAN_UPSTREAM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Upstream endpoint |
 | `BAILIAN_CACHE_PROXY_MIN_TOKENS` | `1024` | Min prefix tokens before adding cache markers |
@@ -196,6 +281,10 @@ jq -c 'select(.status >= 400)' "$LOG"
 | `BAILIAN_CACHE_PROXY_USAGE_LOG` | `~/.cache/bailian-cache-proxy/usage.jsonl` | Usage log path |
 | `BAILIAN_CACHE_PROXY_IDLE_EXIT_MS` | `60000` | Idle timeout after all pids gone |
 | `OPENCODE_BAILIAN_CACHE_PROXY` | — | Set `0` to disable plugin proxy startup |
+| `QWEN_BAILIAN_CACHE_PROXY` | — | Set `0` to disable Qwen hook proxy startup |
+| `BAILIAN_CACHE_PROXY_STATE_DIR` | OS temp dir | Qwen hook pidfile directory |
+| `QWEN_BAILIAN_CACHE_PROXY_HEARTBEAT_MS` | `15000` | Qwen keepalive heartbeat interval |
+| `QWEN_BAILIAN_CACHE_PROXY_MAX_STDIN_BYTES` | `65536` | Max Qwen hook JSON input size |
 
 ## See also
 
