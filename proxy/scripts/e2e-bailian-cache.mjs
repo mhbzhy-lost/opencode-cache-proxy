@@ -4,7 +4,7 @@
  * explicit context caching against a real DashScope/Qwen-compatible upstream.
  *
  * Manual run only — not part of `npm test`. Requires:
- *   proxy/.env with OPENAI_COMPATIBLE_API_KEY or DASHSCOPE_API_KEY.
+ *   proxy/.env with OPENAI_COMPATIBLE_API_KEY.
  *
  * Cost budget: ~2 calls of qwen-turbo with ≈1100-token prompt and 8 max_tokens.
  *
@@ -35,10 +35,9 @@ const envPath = join(here, "..", ".env")
   }
 }
 
-const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY || process.env.DASHSCOPE_API_KEY
+const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY
 const upstreamBaseUrl =
   process.env.OPENAI_COMPATIBLE_UPSTREAM_BASE_URL ||
-  process.env.DASHSCOPE_BASE_URL ||
   "https://dashscope.aliyuncs.com/compatible-mode/v1"
 const model = process.env.DASHSCOPE_E2E_MODEL || "qwen3.6-flash"
 const cacheCreationWaitMs = Number(process.env.DASHSCOPE_E2E_WAIT_MS || 8000)
@@ -67,7 +66,7 @@ const countUsageLines = async () => {
 const usageLogBaseline = await countUsageLines()
 
 if (!apiKey) {
-  console.error("❌ OPENAI_COMPATIBLE_API_KEY or DASHSCOPE_API_KEY missing in .env")
+  console.error("❌ OPENAI_COMPATIBLE_API_KEY missing in .env")
   process.exit(1)
 }
 

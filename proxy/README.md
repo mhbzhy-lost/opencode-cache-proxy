@@ -60,28 +60,17 @@ elapses.
 
 ## Environment
 
-- `OPENAI_COMPATIBLE_API_KEY`: generic upstream API key fallback when the
-  request has no `Authorization` header.
-- `DASHSCOPE_API_KEY`: DashScope-compatible API key fallback for existing
-  installs.
-- `BAILIAN_CODING_PLAN_API_KEY`: Alibaba Cloud Coding Plan API key fallback,
-  useful for Qwen Code setups that target `https://coding.dashscope.aliyuncs.com/v1`.
+- `OPENAI_COMPATIBLE_API_KEY`: upstream API key, used when the request has no
+  `Authorization` header (required).
+- `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL`: upstream base URL, default
+  `https://dashscope.aliyuncs.com/compatible-mode/v1`.
 - `BAILIAN_CACHE_PROXY_PORT`: local proxy port, default `48761`.
-- `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL`: generic upstream base URL override.
-- `BAILIAN_UPSTREAM_BASE_URL`: historical upstream base URL alias, default
-  China DashScope compatible-mode endpoint.
 - `BAILIAN_CACHE_PROXY_MIN_TOKENS`: minimum estimated prefix tokens before
   adding cache markers, default `1024`.
-- `BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS`: deprecated marker-planner alias.
 - `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES`: maximum accepted request body size,
   default `10485760`.
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
 - `QWEN_BAILIAN_CACHE_PROXY=0`: disables Qwen hook-managed proxy startup.
-- `BAILIAN_CACHE_PROXY_STATE_DIR`: Qwen hook pidfile directory.
-- `QWEN_BAILIAN_CACHE_PROXY_HEARTBEAT_MS`: Qwen keepalive heartbeat interval,
-  default `15000`.
-- `QWEN_BAILIAN_CACHE_PROXY_MAX_STDIN_BYTES`: maximum accepted Qwen hook JSON
-  input size, default `65536`.
 
 ## Thinking Mode Variants
 

@@ -74,53 +74,12 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
-  test("uses OpenAI-compatible API key as the first authorization fallback", () => {
+  test("resolveDefaultApiKey reads OPENAI_COMPATIBLE_API_KEY", () => {
     assert.equal(
-      resolveDefaultApiKey({
-        OPENAI_COMPATIBLE_API_KEY: "sk-compatible",
-        DASHSCOPE_API_KEY: "sk-dashscope",
-        BAILIAN_CODING_PLAN_API_KEY: "sk-sp-test",
-      }),
-      "sk-compatible",
+      resolveDefaultApiKey({ OPENAI_COMPATIBLE_API_KEY: "sk-test" }),
+      "sk-test",
     )
-  })
-
-  test("uses Alibaba Cloud Coding Plan API key as authorization fallback", async () => {
-    let receivedAuthorization
-    const upstream = createServer(async (request, response) => {
-      receivedAuthorization = request.headers.authorization
-      await readJson(request)
-      response.writeHead(200, { "content-type": "application/json" })
-      response.end(JSON.stringify({ id: "chatcmpl-coding-plan", choices: [] }))
-    })
-    const upstreamAddress = await listen(upstream)
-
-    const proxy = createBailianCacheProxy({
-      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/v1`,
-      apiKey: resolveDefaultApiKey({ BAILIAN_CODING_PLAN_API_KEY: "sk-sp-test" }),
-      lifecycle: false,
-    })
-    const proxyAddress = await listen(proxy.server)
-
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:${proxyAddress.port}/v1/chat/completions`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            model: "qwen3-coder-plus",
-            messages: [{ role: "user", content: "hi" }],
-          }),
-        },
-      )
-
-      assert.equal(response.status, 200)
-      assert.equal(receivedAuthorization, "Bearer sk-sp-test")
-    } finally {
-      await close(proxy.server)
-      await close(upstream)
-    }
+    assert.equal(resolveDefaultApiKey({}), "")
   })
 
   test("accepts Qwen Code style /v1 chat-completions path for compatible-mode upstreams", async () => {

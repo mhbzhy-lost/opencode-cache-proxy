@@ -41,9 +41,7 @@ plugins/
 - **Node.js** >= 20 (uses `node:test`, `fetch`, ESM)
 - **OpenCode** ([install](https://opencode.ai)), **Qwen Code**, or another
   OpenAI-compatible client
-- API credentials for an upstream that accepts the forwarded requests. For the
-  default Qwen/DashScope profile, use `OPENAI_COMPATIBLE_API_KEY`,
-  `DASHSCOPE_API_KEY`, or `BAILIAN_CODING_PLAN_API_KEY`.
+- `OPENAI_COMPATIBLE_API_KEY` — your upstream API key
 
 ## Setup
 
@@ -62,7 +60,7 @@ cd opencode-cache-proxy
 
 ```bash
 cp proxy/.env.example proxy/.env
-# Edit proxy/.env — set OPENAI_COMPATIBLE_API_KEY or a supported legacy alias
+# Edit proxy/.env — set OPENAI_COMPATIBLE_API_KEY
 ```
 
 `.env` is gitignored. The proxy loads it on startup so it works even when
@@ -124,9 +122,7 @@ Add a custom provider in your `opencode.json` (usually at
 ```
 
 The `baseURL` points at the local proxy. Only `openai-compatible-cached` goes
-through the proxy; other OpenCode providers are unaffected. Host repositories
-that need DashScope-specific defaults can run the configurator with
-`--opencode-api-key-env DASHSCOPE_API_KEY`.
+through the proxy; other OpenCode providers are unaffected.
 
 #### Qwen Code provider
 
@@ -169,23 +165,12 @@ upstream path.
 }
 ```
 
-For a generic OpenAI-compatible upstream, set:
+Configure the two env vars in `proxy/.env`:
 
 ```sh
-OPENAI_COMPATIBLE_UPSTREAM_BASE_URL=https://example.invalid/v1
 OPENAI_COMPATIBLE_API_KEY=sk-...
+OPENAI_COMPATIBLE_UPSTREAM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
-
-For Alibaba Cloud Coding Plan, set:
-
-```sh
-BAILIAN_UPSTREAM_BASE_URL=https://coding.dashscope.aliyuncs.com/v1
-BAILIAN_CODING_PLAN_API_KEY=sk-sp-...
-```
-
-For DashScope compatible-mode, keep the default upstream
-`https://dashscope.aliyuncs.com/compatible-mode/v1` and use either
-`OPENAI_COMPATIBLE_API_KEY` or `DASHSCOPE_API_KEY`.
 
 ### 4. Start the proxy
 
@@ -323,21 +308,15 @@ jq -c 'select(.status >= 400)' "$LOG"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENAI_COMPATIBLE_API_KEY` | — | Generic upstream API key fallback |
-| `DASHSCOPE_API_KEY` | — | DashScope-compatible API key fallback |
-| `BAILIAN_CODING_PLAN_API_KEY` | — | Alibaba Cloud Coding Plan API key fallback |
+| `OPENAI_COMPATIBLE_API_KEY` | — | Upstream API key (required) |
+| `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Upstream base URL |
 | `BAILIAN_CACHE_PROXY_PORT` | `48761` | Local listen port |
-| `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL` | — | Generic upstream endpoint override |
-| `BAILIAN_UPSTREAM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Historical upstream endpoint alias |
 | `BAILIAN_CACHE_PROXY_MIN_TOKENS` | `1024` | Min prefix tokens before adding cache markers |
 | `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES` | `10485760` | Max request body size |
 | `BAILIAN_CACHE_PROXY_USAGE_LOG` | `~/.cache/bailian-cache-proxy/usage.jsonl` | Usage log path |
 | `BAILIAN_CACHE_PROXY_IDLE_EXIT_MS` | `60000` | Idle timeout after all pids gone |
 | `OPENCODE_BAILIAN_CACHE_PROXY` | — | Set `0` to disable plugin proxy startup |
 | `QWEN_BAILIAN_CACHE_PROXY` | — | Set `0` to disable Qwen hook proxy startup |
-| `BAILIAN_CACHE_PROXY_STATE_DIR` | OS temp dir | Qwen hook pidfile directory |
-| `QWEN_BAILIAN_CACHE_PROXY_HEARTBEAT_MS` | `15000` | Qwen keepalive heartbeat interval |
-| `QWEN_BAILIAN_CACHE_PROXY_MAX_STDIN_BYTES` | `65536` | Max Qwen hook JSON input size |
 
 ## See also
 

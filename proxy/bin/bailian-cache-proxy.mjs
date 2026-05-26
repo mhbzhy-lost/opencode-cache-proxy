@@ -40,12 +40,7 @@ const envNumber = (name, fallback) => {
 const host = process.env.BAILIAN_CACHE_PROXY_HOST || "127.0.0.1"
 const port = envNumber("BAILIAN_CACHE_PROXY_PORT", 48761)
 
-// Prefer the generic upstream name and keep historical DashScope/Bailian names
-// as compatibility aliases for existing installs.
-const upstreamBaseUrl =
-  process.env.OPENAI_COMPATIBLE_UPSTREAM_BASE_URL ||
-  process.env.BAILIAN_UPSTREAM_BASE_URL ||
-  process.env.DASHSCOPE_BASE_URL
+const upstreamBaseUrl = process.env.OPENAI_COMPATIBLE_UPSTREAM_BASE_URL
 
 // Production recorder writes to ~/.cache/bailian-cache-proxy/usage.jsonl.
 // createBailianCacheProxy itself defaults to a no-op recorder so unit tests

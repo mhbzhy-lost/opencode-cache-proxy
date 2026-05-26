@@ -167,11 +167,7 @@ export const NOOP_USAGE_RECORDER = Object.freeze({
 })
 
 export const resolveDefaultApiKey = (env = process.env) =>
-  env.OPENAI_COMPATIBLE_API_KEY ||
-  env.DASHSCOPE_API_KEY ||
-  env.BAILIAN_API_KEY ||
-  env.BAILIAN_CODING_PLAN_API_KEY ||
-  ""
+  env.OPENAI_COMPATIBLE_API_KEY || ""
 
 export const createBailianCacheProxy = ({
   upstreamBaseUrl = DEFAULT_UPSTREAM_BASE_URL,
