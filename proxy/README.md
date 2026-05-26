@@ -69,6 +69,9 @@ elapses.
   adding cache markers, default `1024`.
 - `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES`: maximum accepted request body size,
   default `10485760`.
+- `BAILIAN_CACHE_PROXY_MARKER_STRATEGY`: cache marker placement algorithm.
+  Values: `turn-stable` (default) or `fraction`. See the
+  [Cache Planning](#cache-planning) section for details.
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
 - `QWEN_BAILIAN_CACHE_PROXY=0`: disables Qwen hook-managed proxy startup.
 
@@ -158,11 +161,66 @@ rather than risk torn writes.
 ## Cache Planning
 
 The planner strips existing `cache_control` markers and emits at most four
-markers:
+markers. Placement strategy is controlled by
+`BAILIAN_CACHE_PROXY_MARKER_STRATEGY`.
 
-- one early stable marker on the first eligible system/developer prefix
-- rolling tail markers so long sessions refresh cache points near the
-  latest stable conversation prefix
+### `turn-stable` (default)
+
+Anchors mid-markers at **user-message turn boundaries**, the points in
+conversation history where the user sends a genuine prompt (as opposed to
+`role=user` tool-result blocks which shift as more tool calls accumulate).
+
+Marker layout for a typical coding-agent turn:
+
+| Slot | Role | Position |
+|------|------|----------|
+| 0 | system | End of system/developer prefix (stable for life of chat) |
+| 1 | user | First message of the previous user turn (stable until next turn) |
+| 2 | user | First message of the current user turn (stable within the turn) |
+| 3 | any | Last eligible block (tail anchor, advances on every request) |
+
+Within a single opencode turn the user sends one message, the assistant fires
+many tool calls (accumulating tool-result `user` blocks), then produces the
+final response. The prefix up to the user's real prompt is **constant** across
+every tool call in that turn — a marker at the user message boundary therefore
+hits the upstream cache for every subsequent request in the turn.
+
+Across turns, the previous turn's user message becomes a stable prefix point
+since Turn N's full history is a fixed prefix of Turn N+1's history:
+
+```
+Request A (turn 1, in-flight): [system, turn0_user, turn1_user, tail]
+Request B (turn 2, in-flight): [system, turn1_user, turn2_user, tail]
+                                ^^^^^^^^ ^^^^^^^^^^ ^^^^^^^^^^
+                                stable across both requests
+```
+
+If fewer than two turn-boundary user messages are found (short conversations
+or tool-only interactions), the planner falls back to the `fraction` strategy
+for the remaining slots.
+
+### `fraction` (legacy)
+
+Places two mid-markers at token-fraction positions `[0.5, 0.85]` between the
+system anchor and the tail anchor. Markers drift forward with the growing
+conversation; each new request invalidates the previous request's mid-prefix
+cache until the next 5-minute renewal window.
+
+Production data from a full day of opencode use showed that 44% of consecutive
+4-marker request pairs under this strategy had **zero** matching marker hashes
+— mid-markers shifted on nearly every request. Turn-stable eliminates this
+drift within a turn.
+
+### Record schema note
+
+Each usage record carries `cache_diagnostic.strategy` (= `turn-stable` or
+`fraction`), so `cache-stats` and raw `jq` queries can segment hit-rate
+analysis by the strategy in effect:
+
+```bash
+jq -r '[.ts, .model, .cache_diagnostic.strategy, .cache_hit_ratio] | @tsv' \
+  ~/.cache/bailian-cache-proxy/usage.jsonl
+```
 
 Qwen/DashScope-compatible backends create cache blocks after a response
 returns, so the first request may create cache while later requests should show

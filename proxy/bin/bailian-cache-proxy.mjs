@@ -42,6 +42,14 @@ const port = envNumber("BAILIAN_CACHE_PROXY_PORT", 48761)
 
 const upstreamBaseUrl = process.env.OPENAI_COMPATIBLE_UPSTREAM_BASE_URL
 
+// Marker strategy: "turn-stable" (default) anchors mid-markers at user-role
+// turn boundaries, yielding stable cache keys across requests in the same
+// turn. "fraction" restores the legacy 0.5/0.85 token-fraction placement.
+// Override with BAILIAN_CACHE_PROXY_MARKER_STRATEGY in .env.
+const markerStrategy = (
+  process.env.BAILIAN_CACHE_PROXY_MARKER_STRATEGY || "turn-stable"
+).toLowerCase().trim() || "turn-stable"
+
 // Production recorder writes to ~/.cache/bailian-cache-proxy/usage.jsonl.
 // createBailianCacheProxy itself defaults to a no-op recorder so unit tests
 // don't pollute the user's stats file; this entrypoint is the only place that
@@ -55,11 +63,11 @@ const { server } = createBailianCacheProxy({
   maxBodyBytes: envNumber("BAILIAN_CACHE_PROXY_MAX_BODY_BYTES", 10 * 1024 * 1024),
   cacheOptions: {
     minCacheTokens: envNumber("BAILIAN_CACHE_PROXY_MIN_TOKENS", 1024),
+    markerStrategy,
     // Note: BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS is deprecated. The cache
-    // planner no longer uses fixed N-block rolling tail markers; it places
-    // markers at token fractions instead (see DEFAULT_MARKER_FRACTIONS in
-    // src/cache-planner.mjs). The env var is intentionally not forwarded so
-    // the option doesn't get silently ignored downstream.
+    // planner no longer uses fixed N-block rolling tail markers. The env var
+    // is intentionally not forwarded so the option doesn't get silently
+    // ignored downstream.
   },
   usageRecorder,
 })

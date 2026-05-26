@@ -153,26 +153,21 @@ describe("planBailianCacheMarkers", () => {
   test("places mid-prefix markers at logarithmic token fractions, not at fixed block intervals", () => {
     // Regression for the production bug: with a long conversation, the old
     // strategy clustered three tail markers into the last 60 blocks, leaving
-    // the middle 100K+ tokens of prefix uncovered. The new strategy spreads
-    // markers by token fraction so a mid-prefix cache segment can hit.
+    // the middle 100K+ tokens of prefix uncovered. The fraction-based strategy
+    // spreads markers by token fraction; test this explicitly with
+    // markerStrategy="fraction" since the default is now "turn-stable".
     const planned = planBailianCacheMarkers(
       { model: "qwen3.7-max", messages: longConversation(80, 30) },
-      { minCacheTokens: 16 },
+      { minCacheTokens: 16, markerStrategy: "fraction" },
     )
     assert.equal(countCacheMarkers(planned), 4)
     const positions = findMarkerMessageIndexes(planned)
-    // 4 markers, well-spread: system anchor + two mid-prefix + tail.
     assert.equal(positions[0], 0, "first marker must anchor the system prefix")
     assert.equal(
       positions[positions.length - 1],
       planned.messages.length - 1,
       "last marker must anchor the conversation tail",
     )
-    // Regression check: the OLD rolling-tail strategy collapsed all 3 tail
-    // markers into the last ~60 blocks. The fix needs at least ONE mid marker
-    // in the first half of the conversation so dashscope can cache the
-    // mid-prefix segment instead of having to fall back to the system anchor
-    // when the rolling window slides past the marker positions.
     const halfwayMessageIndex = Math.floor(planned.messages.length / 2)
     const midMarkers = positions.slice(1, -1)
     const hasEarlyMidMarker = midMarkers.some((idx) => idx <= halfwayMessageIndex)
@@ -183,23 +178,19 @@ describe("planBailianCacheMarkers", () => {
   })
 
   test("marker token positions remain stable as the conversation grows", () => {
-    // Core value of the new strategy: across requests of growing length, the
-    // same token-fraction targets land at consistent prefix-token boundaries
-    // → dashscope hits the mid-prefix cache segment instead of rebuilding.
+    // Core value across either strategy: markers advance forward with the
+    // conversation instead of jumping erratically. We test the fraction
+    // strategy here since its positions are deterministic token fractions.
     const tokensPerTurn = 40
     const lengthsToTest = [40, 50, 60, 80]
     const tokenPositions = []
     for (const length of lengthsToTest) {
       const planned = planBailianCacheMarkers(
         { model: "qwen3.7-max", messages: longConversation(length, tokensPerTurn) },
-        { minCacheTokens: 16 },
+        { minCacheTokens: 16, markerStrategy: "fraction" },
       )
       const positions = findMarkerMessageIndexes(planned)
-      // Track the token position of the first MID-prefix marker (the one
-      // matching DEFAULT_MARKER_FRACTIONS[0] ~= 0.5). It should grow
-      // proportionally with the conversation, not snap back to the tail.
-      const midIndex = positions[1] // [system, mid1, mid2, tail]
-      // Compute the prefix-token count for that message index.
+      const midIndex = positions[1]
       const prefixTokens = planned.messages
         .slice(0, midIndex + 1)
         .reduce((sum, msg) => {
@@ -223,9 +214,6 @@ describe("planBailianCacheMarkers", () => {
         }, 0)
       tokenPositions.push({ length, midIndex, prefixTokens })
     }
-    // Mid marker prefix-token grows monotonically with conversation length
-    // (i.e. the marker is *moving with* the conversation centre, not pinned
-    // to the tail or to a fixed early block).
     for (let i = 1; i < tokenPositions.length; i += 1) {
       assert.ok(
         tokenPositions[i].prefixTokens > tokenPositions[i - 1].prefixTokens,
@@ -246,20 +234,19 @@ describe("planBailianCacheMarkers", () => {
   })
 
   test("markerFractions option is honoured for callers that want a different distribution", () => {
+    // markerFractions only has effect under markerStrategy="fraction" — both
+    // custom and default calls use "fraction" here so the test isolates the
+    // fractions override rather than comparing fraction vs turn-stable.
     const planned = planBailianCacheMarkers(
       { model: "qwen3.7-max", messages: longConversation(60, 30) },
-      { minCacheTokens: 16, markerFractions: [0.25, 0.75] },
+      { minCacheTokens: 16, markerStrategy: "fraction", markerFractions: [0.25, 0.75] },
     )
     assert.equal(countCacheMarkers(planned), 4)
-    // Smoke check: positions are different from default fractions [0.5, 0.85]
-    // for the same conversation. We don't pin exact indexes (those depend on
-    // tokenizer estimation), only that the override actually changes
-    // something compared to default — otherwise the option would be a no-op.
     const positionsCustom = findMarkerMessageIndexes(planned)
     const positionsDefault = findMarkerMessageIndexes(
       planBailianCacheMarkers(
         { model: "qwen3.7-max", messages: longConversation(60, 30) },
-        { minCacheTokens: 16 },
+        { minCacheTokens: 16, markerStrategy: "fraction" },
       ),
     )
     assert.notDeepEqual(positionsCustom, positionsDefault)
@@ -279,7 +266,7 @@ describe("planBailianCacheMarkers", () => {
     }
     assert.equal(warnings.length, 1)
     assert.match(warnings[0], /maxLookbackContentBlocks is deprecated/)
-    assert.match(warnings[0], /markerFractions/)
+    assert.match(warnings[0], /markerStrategy/)
   })
 
   test("does NOT warn when maxLookbackContentBlocks is omitted (the normal path)", () => {
@@ -313,5 +300,119 @@ describe("planBailianCacheMarkers", () => {
     // Should be 1 or 2 markers, never throw or return junk.
     const count = countCacheMarkers(planned)
     assert.ok(count >= 1 && count <= 2, `expected 1-2 markers, got ${count}`)
+  })
+
+  // --- Turn-stable strategy specific tests ---
+
+  test("turn-stable anchors mid-markers at user turn boundaries, not at token fractions", () => {
+    // OpenCode-style conversation: system + alternating user/assistant turns,
+    // where the last turn has many assistant tool calls (simulated as extra
+    // assistant+user pairs). Turn-stable should anchor at the LAST two user
+    // messages with real text content, not drift by token count.
+    const messages = [
+      { role: "system", content: repeatedText("stable", 120) },
+      { role: "user", content: "please do task A " + repeatedText("ctx-A", 40) },
+      { role: "assistant", content: "doing A " + repeatedText("result-A", 40) },
+      { role: "user", content: "please do task B " + repeatedText("ctx-B", 40) },
+      { role: "assistant", content: repeatedText("tool-call-1", 30) },
+      { role: "user", content: [{ type: "tool_result", content: "result-1" }] },
+      { role: "assistant", content: repeatedText("tool-call-2", 30) },
+      { role: "user", content: [{ type: "tool_result", content: "result-2" }] },
+      { role: "assistant", content: repeatedText("tool-call-3", 30) },
+    ]
+
+    const planned = planBailianCacheMarkers(
+      { model: "qwen3.7-max", messages },
+      { minCacheTokens: 16, markerStrategy: "turn-stable" },
+    )
+    const positions = findMarkerMessageIndexes(planned)
+    assert.equal(countCacheMarkers(planned), 4)
+
+    assert.equal(positions[0], 0)
+    assert.equal(positions[positions.length - 1], 8)
+
+    const midPositions = positions.slice(1, -1)
+    for (const idx of midPositions) {
+      const msg = planned.messages[idx]
+      assert.equal(msg.role, "user", `mid-marker at index ${idx} must land on a user message`)
+      if (typeof msg.content === "string") {
+        // Real user text (good)
+      } else {
+        const hasTextPart = Array.isArray(msg.content) &&
+          msg.content.some((p) => typeof p === "object" && p.type === "text")
+        assert.ok(hasTextPart, `mid-marker at index ${idx} must have text content (not tool_result)`)
+      }
+    }
+  })
+
+  test("turn-stable keeps mid-markers stable across consecutive requests in the same turn", () => {
+    const baseConversation = [
+      { role: "system", content: repeatedText("stable", 120) },
+      { role: "user", content: "do task A " + repeatedText("ctx-A", 40) },
+      { role: "assistant", content: "result A " + repeatedText("res", 40) },
+      { role: "user", content: "do task B " + repeatedText("ctx-B", 40) },
+    ]
+
+    const request1 = [
+      ...baseConversation,
+      { role: "assistant", content: repeatedText("tool-1", 30) },
+      { role: "user", content: [{ type: "tool_result", content: "r1" }] },
+      { role: "assistant", content: repeatedText("tool-2", 30) },
+    ]
+    const request2 = [
+      ...request1,
+      { role: "user", content: [{ type: "tool_result", content: "r2" }] },
+      { role: "assistant", content: repeatedText("tool-3", 30) },
+      { role: "user", content: [{ type: "tool_result", content: "r3" }] },
+      { role: "assistant", content: repeatedText("tool-4", 30) },
+    ]
+
+    const planned1 = planBailianCacheMarkersWithDiagnostics(
+      { model: "qwen3.7-max", messages: request1 },
+      { minCacheTokens: 16, markerStrategy: "turn-stable" },
+    )
+    const planned2 = planBailianCacheMarkersWithDiagnostics(
+      { model: "qwen3.7-max", messages: request2 },
+      { minCacheTokens: 16, markerStrategy: "turn-stable" },
+    )
+
+    const hashes1 = planned1.diagnostics.markers.map((m) => m.prefix_hash)
+    const hashes2 = planned2.diagnostics.markers.map((m) => m.prefix_hash)
+
+    for (let i = 0; i < Math.min(hashes1.length - 1, hashes2.length - 1); i += 1) {
+      assert.equal(
+        hashes1[i], hashes2[i],
+        `marker ${i} prefix hash should match between requests within the same turn`,
+      )
+    }
+  })
+
+  test("turn-stable diagnostics include strategy field set to turn-stable", () => {
+    const { diagnostics } = planBailianCacheMarkersWithDiagnostics(
+      {
+        model: "qwen3.7-max",
+        messages: [
+          { role: "system", content: repeatedText("stable", 120) },
+          { role: "user", content: "hi" },
+        ],
+      },
+      { minCacheTokens: 16 },
+    )
+    assert.equal(diagnostics.strategy, "turn-stable")
+  })
+
+  test("turn-stable falls back to fraction placement when no turn boundaries found", () => {
+    const messages = [
+      { role: "system", content: repeatedText("stable", 120) },
+      { role: "assistant", content: repeatedText("content", 40) },
+      { role: "assistant", content: repeatedText("more-content", 40) },
+      { role: "assistant", content: repeatedText("even-more", 40) },
+    ]
+    const planned = planBailianCacheMarkers(
+      { model: "qwen3.7-max", messages },
+      { minCacheTokens: 16, markerStrategy: "turn-stable" },
+    )
+    const count = countCacheMarkers(planned)
+    assert.ok(count >= 2 && count <= 4, `expected 2-4 markers, got ${count}`)
   })
 })
