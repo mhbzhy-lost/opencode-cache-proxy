@@ -6,6 +6,7 @@ import {
   DEFAULT_MARKER_FRACTIONS,
   planBailianCacheMarkers,
   planBailianCacheMarkersWithDiagnostics,
+  truncateBodyForKeepalive,
 } from "../src/cache-planner.mjs"
 
 const findMarkerMessageIndexes = (planned) => {
@@ -414,5 +415,93 @@ describe("planBailianCacheMarkers", () => {
     )
     const count = countCacheMarkers(planned)
     assert.ok(count >= 2 && count <= 4, `expected 2-4 markers, got ${count}`)
+  })
+})
+
+describe("truncateBodyForKeepalive", () => {
+  test("returns null when markers has fewer than 3 entries", () => {
+    const body = { model: "qwen3.7-max", messages: [{ role: "user", content: "hi" }] }
+    assert.equal(truncateBodyForKeepalive(body, []), null)
+    assert.equal(truncateBodyForKeepalive(body, [{ message_index: 0 }]), null)
+  })
+
+  test("truncates messages after the message containing marker index 2", () => {
+    const body = {
+      model: "qwen3.7-max",
+      messages: [
+        { role: "system", content: "sys " + "x".repeat(8000) },
+        { role: "user", content: "first user turn" },
+        { role: "assistant", content: "reply one" },
+        { role: "user", content: "second user turn" },
+        { role: "assistant", content: "reply two" },
+        { role: "tool", content: "tool result" },
+      ],
+    }
+    // markers[2] is at message_index 3 (second user turn)
+    const markers = [
+      { role: "system", message_index: 0 },
+      { role: "user", message_index: 1 },
+      { role: "user", message_index: 3 },
+      { role: "tool", message_index: 5 },
+    ]
+    const truncated = truncateBodyForKeepalive(body, markers)
+    assert.ok(truncated)
+    assert.equal(truncated.messages.length, 4) // 0..3 inclusive
+    assert.equal(truncated.messages[0].role, "system")
+    assert.equal(truncated.messages[3].content, "second user turn")
+  })
+
+  test("strips cache_control annotations from messages", () => {
+    const body = {
+      model: "qwen3.7-max",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "hi", cache_control: { type: "ephemeral" } }] },
+        { role: "assistant", content: "ok" },
+      ],
+      stream: true,
+      stream_options: { include_usage: true },
+    }
+    const markers = [
+      { message_index: 0 }, { message_index: 0 }, { message_index: 0 }, { message_index: 1 },
+    ]
+    const truncated = truncateBodyForKeepalive(body, markers)
+    for (const msg of truncated.messages) {
+      const parts = Array.isArray(msg.content) ? msg.content : [msg.content]
+      for (const p of parts) {
+        assert.ok(!p?.cache_control, "cache_control stripped")
+      }
+    }
+  })
+
+  test("preserves model and sets stream=false, max_tokens=1", () => {
+    const body = {
+      model: "qwen3.7-max",
+      messages: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }, { role: "assistant", content: "d" }],
+      stream: true,
+      stream_options: { include_usage: true },
+    }
+    const markers = [
+      { message_index: 0 }, { message_index: 0 }, { message_index: 2 }, { message_index: 3 },
+    ]
+    const truncated = truncateBodyForKeepalive(body, markers)
+    assert.equal(truncated.model, "qwen3.7-max")
+    assert.equal(truncated.stream, false)
+    assert.equal(truncated.max_tokens, 1)
+    assert.equal(truncated.stream_options, undefined)
+  })
+
+  test("injects _keepalive marker for usage-log filtering", () => {
+    const body = { model: "q", messages: [{ role: "user", content: "a" }, { role: "user", content: "b" }, { role: "user", content: "c" }, { role: "user", content: "d" }] }
+    const markers = [
+      { message_index: 0 }, { message_index: 1 }, { message_index: 2 }, { message_index: 3 },
+    ]
+    const truncated = truncateBodyForKeepalive(body, markers)
+    assert.equal(truncated._keepalive, true)
+  })
+
+  test("returns null when input is not a chat body", () => {
+    assert.equal(truncateBodyForKeepalive(null, []), null)
+    assert.equal(truncateBodyForKeepalive({ model: "x" }, []), null)
+    assert.equal(truncateBodyForKeepalive("string", []), null)
   })
 })

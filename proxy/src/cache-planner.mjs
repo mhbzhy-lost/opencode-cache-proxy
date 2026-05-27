@@ -344,3 +344,35 @@ export const planBailianCacheMarkersWithDiagnostics = (body, options = {}) => {
     },
   }
 }
+
+export const truncateBodyForKeepalive = (body, markers) => {
+  if (!body || typeof body !== "object" || !Array.isArray(body?.messages)) return null
+  if (!Array.isArray(markers) || markers.length < 3) return null
+
+  const cutoffMessageIndex = markers[2].message_index
+  if (!Number.isFinite(cutoffMessageIndex) || cutoffMessageIndex < 0) return null
+
+  const truncatedMessages = body.messages
+    .slice(0, cutoffMessageIndex + 1)
+    .map((msg) => {
+      const cloned = { ...msg }
+      delete cloned.cache_control
+      if (Array.isArray(cloned.content)) {
+        cloned.content = cloned.content.map((part) => {
+          if (!part || typeof part !== "object") return part
+          const p = { ...part }
+          delete p.cache_control
+          return p
+        })
+      }
+      return cloned
+    })
+
+  return {
+    model: body.model,
+    messages: truncatedMessages,
+    stream: false,
+    max_tokens: 1,
+    _keepalive: true,
+  }
+}
