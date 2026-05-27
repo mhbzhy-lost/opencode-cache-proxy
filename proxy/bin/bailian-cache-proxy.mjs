@@ -50,6 +50,14 @@ const markerStrategy = (
   process.env.BAILIAN_CACHE_PROXY_MARKER_STRATEGY || "turn-stable"
 ).toLowerCase().trim() || "turn-stable"
 
+// Keepalive: activity-driven cache TTL renewal. Sends ONE ping to upstream
+// after a session goes idle for 4.5 min, extending the DashScope 5min TTL.
+// Default enabled; set BAILIAN_CACHE_PROXY_KEEPALIVE=0 to disable.
+const keepaliveEnabled = process.env.BAILIAN_CACHE_PROXY_KEEPALIVE !== "0"
+const keepaliveThresholdMs = envNumber("BAILIAN_CACHE_PROXY_KEEPALIVE_THRESHOLD_MS", 270_000)
+const keepaliveScanIntervalMs = envNumber("BAILIAN_CACHE_PROXY_KEEPALIVE_SCAN_INTERVAL_MS", 30_000)
+const keepaliveMinHits = envNumber("BAILIAN_CACHE_PROXY_KEEPALIVE_MIN_HITS", 2)
+
 // Production recorder writes to ~/.cache/bailian-cache-proxy/usage.jsonl.
 // createBailianCacheProxy itself defaults to a no-op recorder so unit tests
 // don't pollute the user's stats file; this entrypoint is the only place that
@@ -64,6 +72,14 @@ const { server } = createBailianCacheProxy({
   cacheOptions: {
     minCacheTokens: envNumber("BAILIAN_CACHE_PROXY_MIN_TOKENS", 1024),
     markerStrategy,
+    keepalive: keepaliveEnabled
+      ? {
+          enabled: true,
+          thresholdMs: keepaliveThresholdMs,
+          scanIntervalMs: keepaliveScanIntervalMs,
+          minHits: keepaliveMinHits,
+        }
+      : { enabled: false },
     // Note: BAILIAN_CACHE_PROXY_MAX_LOOKBACK_BLOCKS is deprecated. The cache
     // planner no longer uses fixed N-block rolling tail markers. The env var
     // is intentionally not forwarded so the option doesn't get silently

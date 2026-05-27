@@ -72,6 +72,8 @@ elapses.
 - `BAILIAN_CACHE_PROXY_MARKER_STRATEGY`: cache marker placement algorithm.
   Values: `turn-stable` (default) or `fraction`. See the
   [Cache Planning](#cache-planning) section for details.
+- `BAILIAN_CACHE_PROXY_KEEPALIVE`: activity-driven keepalive. Set to `0` to
+  disable; default is `1` (enabled, 4.5 min threshold). See [Keepalive](#keepalive).
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
 - `QWEN_BAILIAN_CACHE_PROXY=0`: disables Qwen hook-managed proxy startup.
 
@@ -228,3 +230,42 @@ cache reads in `usage`.
 
 The proxy only accepts uncompressed JSON request bodies. Requests with
 `content-encoding` other than `identity` return `415`.
+
+## Keepalive
+
+DashScope invalidates cache blocks 5 minutes after the last request that
+touched them. For interactive coding sessions, gaps longer than 5 minutes
+between requests are common (reading docs, reviewing diffs, stepping away).
+Without intervention the next request after such a gap gets a full cache miss
+and pays the creation cost again.
+
+The keepalive module (`src/keepalive.mjs`) watches every session for activity
+and sends **one** lightweight ping to upstream when a session has been silent
+for 4.5 minutes. The ping resets the 5-minute TTL window, so a session that
+returns within 9.5 minutes of its last real request still finds a warm cache.
+
+### Mechanism
+
+- Every successful chat-completions request calls `registerHit(sessionKey,
+  truncatedBody)`, where `sessionKey` is the marker-0 `prefix_hash` (stable
+  within a conversation).
+- A 30-second scan timer checks the activity map. Any entry older than the
+  threshold that has not yet been pinged fires `sendKeepalive`.
+- The ping is a single upstream POST carrying the truncated body (messages up
+  to marker 2, with `cache_control` stripped). The response is discarded; only
+  the upstream's TTL refresh matters.
+- A `keepaliveSent` flag prevents repeated pings in the same idle window. The
+  flag resets on every real `registerHit`, so the mechanism is single-shot per
+  idle gap.
+
+### Trade-offs
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `thresholdMs` | 270 000 (4.5 min) | Idle time before the ping fires. Must be < DashScope TTL (5 min). Lower = more headroom but more pings on short pauses. |
+| `scanIntervalMs` | 30 000 | How often the activity map is scanned. Lower = tighter timing but more CPU. |
+| `minHits` | 2 | Minimum real hits a session needs before the keepalive arms. Prevents pinging one-shot requests that won't return. |
+
+Disable entirely with `BAILIAN_CACHE_PROXY_KEEPALIVE=0` if your upstream
+does not use DashScope-style TTL, or if you prefer to pay the occasional
+cache-miss cost rather than send background requests.
