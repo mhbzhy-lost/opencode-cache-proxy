@@ -2,7 +2,8 @@ import { createServer } from "node:http"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 
-import { planBailianCacheMarkersWithDiagnostics } from "./cache-planner.mjs"
+import { planBailianCacheMarkersWithDiagnostics, truncateBodyForKeepalive } from "./cache-planner.mjs"
+import { createKeepaliveManager } from "./keepalive.mjs"
 import { createLifecycleTracker } from "./lifecycle.mjs"
 import { applyThinkModeRewrite } from "./think-mode-rewriter.mjs"
 import { ensureStreamUsageOption, extractUsage } from "./usage-extractor.mjs"
@@ -182,7 +183,21 @@ export const createBailianCacheProxy = ({
   usageRecorder = NOOP_USAGE_RECORDER,
   usageSniffBytes = DEFAULT_USAGE_SNIFF_BYTES,
   now = () => Date.now(),
+  keepaliveHooks = {},
 } = {}) => {
+  const keepaliveManager = cacheOptions.keepalive?.enabled
+    ? createKeepaliveManager({
+        thresholdMs: cacheOptions.keepalive.thresholdMs,
+        scanIntervalMs: cacheOptions.keepalive.scanIntervalMs,
+        minHits: cacheOptions.keepalive.minHits,
+        maxKeys: cacheOptions.keepalive.maxKeys,
+        now,
+        enabled: true,
+        onKeepaliveSent: keepaliveHooks.onKeepaliveSent ?? (() => {}),
+      })
+    : null
+  if (keepaliveManager) keepaliveManager.startTimer()
+
   const tracker = createLifecycleTracker()
   let lastActiveAt = Date.now()
   let lifecycleTimer
@@ -205,6 +220,8 @@ export const createBailianCacheProxy = ({
     let parsedRequestModel = null
     let isStream = false
     let cacheDiagnostic = null
+    let keepaliveBody = null
+    let keepaliveSessionKey = null
     let recorded = false
     const recordOnce = (overrides) => {
       if (recorded) return
@@ -250,6 +267,10 @@ export const createBailianCacheProxy = ({
         const plannedResult = planBailianCacheMarkersWithDiagnostics(rewrittenBody, cacheOptions)
         let planned = plannedResult.body
         cacheDiagnostic = plannedResult.diagnostics
+        keepaliveBody = plannedResult.diagnostics?.markers
+          ? truncateBodyForKeepalive(planned, plannedResult.diagnostics.markers)
+          : null
+        keepaliveSessionKey = plannedResult.diagnostics?.markers?.[0]?.prefix_hash ?? null
         // 2. Inject stream_options.include_usage so streaming responses still
         //    expose token usage in their trailing SSE frame. Without this,
         //    every streaming client call would log
@@ -328,6 +349,16 @@ export const createBailianCacheProxy = ({
               ? "non_stream_body_exceeded_sniff_cap"
               : null,
         })
+        if (!pipelineError && upstreamResponse.ok && keepaliveManager && keepaliveSessionKey && keepaliveBody) {
+          keepaliveManager.registerHit({
+            sessionKey: keepaliveSessionKey,
+            pid: request.headers["x-opencode-pid"] ? Number(request.headers["x-opencode-pid"]) : null,
+            truncatedBody: keepaliveBody,
+            model: parsedRequestModel,
+            url: buildUpstreamUrl(request.url, upstreamBaseUrl).toString(),
+            authHeader: request.headers.authorization || (apiKey ? `Bearer ${apiKey}` : null),
+          })
+        }
       }
     } catch (err) {
       if (err.statusCode === 413) {
@@ -357,6 +388,7 @@ export const createBailianCacheProxy = ({
 
   server.on("close", () => {
     if (lifecycleTimer) clearInterval(lifecycleTimer)
+    if (keepaliveManager) keepaliveManager.stopTimer()
   })
 
   return { server, tracker }

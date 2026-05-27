@@ -841,6 +841,80 @@ describe("createBailianCacheProxy", () => {
     )
   })
 
+  test("keepalive: arms on successful chat request and fires exactly once when session idles past threshold", async () => {
+    let clock = 1_000_000
+    const upstreamBodies = []
+    const pings = []
+    const upstream = createServer(async (request, response) => {
+      upstreamBodies.push(await readJson(request))
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ id: "chatcmpl-keepalive", choices: [] }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      cacheOptions: {
+        minCacheTokens: 512,
+        keepalive: {
+          enabled: true,
+          thresholdMs: 270_000,
+          scanIntervalMs: 50,
+          minHits: 1,
+        },
+      },
+      keepaliveHooks: {
+        onKeepaliveSent: (info) => pings.push(info),
+      },
+      lifecycle: false,
+      now: () => clock,
+      logger: { error: () => {}, warn: () => {} },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer sk-keep",
+            "x-opencode-pid": String(process.pid),
+          },
+          body: JSON.stringify({
+            model: "qwen3.6-plus",
+            messages: [
+              { role: "system", content: "x".repeat(8000) },
+              { role: "user", content: "turn 1 question" },
+              { role: "assistant", content: "turn 1 reply ".repeat(100) },
+              { role: "user", content: "turn 2 question" },
+              { role: "assistant", content: "turn 2 reply ".repeat(100) },
+              { role: "user", content: "final question ".repeat(300) },
+            ],
+          }),
+        },
+      )
+      assert.equal(response.status, 200)
+      await response.json()
+
+      await new Promise((r) => setTimeout(r, 100))
+
+      clock += 300_000
+
+      await new Promise((r) => setTimeout(r, 400))
+
+      const keepaliveBodies = upstreamBodies.filter((b) => b._keepalive === true)
+      assert.equal(keepaliveBodies.length, 1, "exactly one keepalive request sent upstream")
+      assert.equal(keepaliveBodies[0].stream, false, "keepalive is not streaming")
+      assert.equal(keepaliveBodies[0].max_tokens, 1, "keepalive uses max_tokens=1")
+      assert.equal(pings.length, 1, "onKeepaliveSent hook fired exactly once")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("only forwards chat completions paths to Bailian", async () => {
     let upstreamCalled = false
     const upstream = createServer((request, response) => {
