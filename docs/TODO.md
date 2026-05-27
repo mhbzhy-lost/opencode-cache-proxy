@@ -74,44 +74,15 @@ OpenAI 不暴露显式 cache marker，靠内容前缀自动命中。profile 落�
 
 ---
 
-## 2. Keepalive 防 TTL 过期
+## 2. ~~Keepalive 防 TTL 过期~~ (已完成, 2026-05-26)
 
-**状态**：未开工
-**前置**：当前 turn-stable 策略已上线，命中率已达 97.66%（剔首）；未命中主因是上游 5min TTL 被触发
-**触发条件**：用户反馈"思考间隙命中率骤降"，或 stats 显示 TTL_EXPIRED 占比 > 5%
+已落地为活动驱动 + 单次 keepalive 方案 (4.5min threshold, 默认启用)。
 
-### 实现要点（落地时照此做）
-
-- 加 env 开关 `BAILIAN_CACHE_PROXY_KEEPALIVE=0|1`，默认 0
-- 主存储按 **prefix hash** 索引，不按 PID（多个 opencode 实例可能共享同一前缀）
-- 数据结构：
-  ```js
-  activeCacheKeys: Map<prefixHash, {
-    lastHitAt,          // Timestamp，决定是否需要 keepalive
-    body,               // 最近一次成功命中请求的完整 body（用于构造 ping）
-    clients: Set<pid>,  // 引用此 cache key 的活跃 client
-    totalHits: number,  // 热度指标；冷的 cache key 不续期
-  })
-  pidToKeys: Map<pid, Set<prefixHash>>  // 反查
-  ```
-- 每 30s 扫一次 `activeCacheKeys`：
-  - 客户端 PID 全死 → 丢弃
-  - `now - lastHitAt > 4min30s` 且 `totalHits >= 阈值` → 用 body 构造最小 keepalive ping
-  - keepalive 请求 **不计入 usage log**（避免污染命中率统计）
-- LRU cap：`activeCacheKeys` 最多保留 8 个 entry；body 只保留到 marker 3 之前的 messages
-
-### 敏感数据顾虑
-
-keepalive 必须在内存持有请求 body = 持有用户会话上下文的一部分。缓解：
-- 仅内存，不写盘（`usage-recorder` 不触碰 body 字段）
-- body 截断：删掉 marker 3 之后的所有 messages（通常是尾部对话历史）
-- 进程退出时自动销毁
-
-### 与 profile 的关系
-
-keepalive 调度周期 `4min30s` 目前是写死的常量。未来接 Anthropic 等同样有 TTL
-的平台时，要读 `profile.ttlMs * 0.9`；接 OpenAI 时整块跳过。所以这个 TODO 与
-上一个"上游 profile 抽象" 高度相关 —— 两个改动最好同期做，不要分开。
+- 入口 env: `BAILIAN_CACHE_PROXY_KEEPALIVE` (默认 `1`)
+- 模块: `proxy/src/keepalive.mjs` — `createKeepaliveManager`
+- 设计文档: `proxy/README.md` → "## Keepalive" 节
+- 真实数据验证 (2026-05-26 862 请求): 15 次 TTL_EXPIRED 中 9 次 (60%)
+  落在 5–9.5min "可救" 区间, 日净收益 ≈ ¥7.76
 
 ---
 
