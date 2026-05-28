@@ -184,6 +184,7 @@ export const createBailianCacheProxy = ({
   usageSniffBytes = DEFAULT_USAGE_SNIFF_BYTES,
   now = () => Date.now(),
   keepaliveHooks = {},
+  anthropicHandler = null,
 } = {}) => {
   const keepaliveManager = cacheOptions.keepalive?.enabled
     ? createKeepaliveManager({
@@ -204,6 +205,12 @@ export const createBailianCacheProxy = ({
 
   const server = createServer(async (request, response) => {
     const requestPath = new URL(request.url, "http://127.0.0.1").pathname
+
+    if (anthropicHandler && requestPath.startsWith("/apps/anthropic/")) {
+      lastActiveAt = Date.now()
+      anthropicHandler(request, response)
+      return
+    }
 
     if (requestPath === `${CONTROL_PREFIX}/health`) {
       writeJson(response, 200, { ok: true, activePids: tracker.activePids() })

@@ -3,6 +3,8 @@
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { createAnthropicHandler } from "../src/anthropic-handler.mjs"
+import { createKeepaliveManager } from "../src/keepalive.mjs"
 import { loadEnvFile } from "../src/load-env.mjs"
 import { createBailianCacheProxy } from "../src/server.mjs"
 import { createUsageRecorder } from "../src/usage-recorder.mjs"
@@ -64,6 +66,30 @@ const keepaliveMinHits = envNumber("BAILIAN_CACHE_PROXY_KEEPALIVE_MIN_HITS", 2)
 // opts into the real one.
 const usageRecorder = createUsageRecorder({})
 
+const anthropicEnabled = process.env.BAILIAN_CACHE_PROXY_ANTHROPIC_ENABLED !== "0"
+const anthropicUpstreamBaseUrl = process.env.ANTHROPIC_UPSTREAM_BASE_URL || "https://dashscope.aliyuncs.com/apps/anthropic"
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY || ""
+
+const anthropicKeepaliveManager = (anthropicEnabled && keepaliveEnabled)
+  ? createKeepaliveManager({
+      thresholdMs: keepaliveThresholdMs,
+      scanIntervalMs: keepaliveScanIntervalMs,
+      minHits: keepaliveMinHits,
+      enabled: true,
+    })
+  : null
+if (anthropicKeepaliveManager) anthropicKeepaliveManager.startTimer()
+
+const anthropicHandler = anthropicEnabled
+  ? createAnthropicHandler({
+      upstreamBaseUrl: anthropicUpstreamBaseUrl,
+      apiKey: anthropicApiKey,
+      cacheOptions: { minCacheTokens: envNumber("BAILIAN_CACHE_PROXY_MIN_TOKENS", 1024) },
+      usageRecorder,
+      keepaliveManager: anthropicKeepaliveManager,
+    })
+  : null
+
 const { server } = createBailianCacheProxy({
   upstreamBaseUrl,
   idleExitMs: envNumber("BAILIAN_CACHE_PROXY_IDLE_EXIT_MS", 60_000),
@@ -86,6 +112,7 @@ const { server } = createBailianCacheProxy({
     // ignored downstream.
   },
   usageRecorder,
+  anthropicHandler,
 })
 
 server.listen(port, host, () => {
