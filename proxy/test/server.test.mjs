@@ -839,6 +839,55 @@ describe("createBailianCacheProxy", () => {
       /usageRecorder\s*[,}]/,
       "production entrypoint must pass usageRecorder into createBailianCacheProxy",
     )
+    assert.match(
+      binSrc,
+      /process\.env\.ANTHROPIC_CACHE_PROXY_ENABLED/,
+      "Anthropic-specific enable switch must not use a Bailian-prefixed env var",
+    )
+    assert.match(
+      binSrc,
+      /process\.env\.ANTHROPIC_CACHE_PROXY_STRATEGY/,
+      "Anthropic-specific strategy must not use a Bailian-prefixed env var",
+    )
+    assert.match(
+      binSrc,
+      /resolveAnthropicUpstreamUserAgent\(process\.env\)/,
+      "Anthropic-compatible Claude identity compatibility must be resolved through the shared env helper",
+    )
+    assert.match(
+      binSrc,
+      /resolveAnthropicMetadataUserId\(process\.env\)/,
+      "Anthropic metadata.user_id override must be resolved through the shared env helper",
+    )
+    assert.doesNotMatch(
+      binSrc,
+      new RegExp(["BAILIAN", "CACHE_PROXY_ANTHROPIC_"].join("_")),
+      "Anthropic-specific env vars must not be provider-prefixed",
+    )
+    assert.match(
+      binSrc,
+      /process\.env\.ANTHROPIC_UPSTREAM_BASE_URL \|\| "https:\/\/api\.anthropic\.com"/,
+      "Anthropic default upstream must be the standard Anthropic API shape",
+    )
+    assert.doesNotMatch(
+      binSrc,
+      /dashscope\.aliyuncs\.com\/apps\/anthropic/,
+      "Anthropic route must not default to a platform-specific relay",
+    )
+  })
+
+  test(".env.example does not ship a shared Anthropic metadata.user_id", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { fileURLToPath } = await import("node:url")
+    const { dirname, join } = await import("node:path")
+    const here = dirname(fileURLToPath(import.meta.url))
+    const envExample = readFileSync(join(here, "..", ".env.example"), "utf8")
+
+    assert.doesNotMatch(
+      envExample,
+      /^#?\s*ANTHROPIC_CACHE_PROXY_METADATA_USER_ID=opencode-cache-proxy\b/m,
+      "example config must not include a reusable shared metadata.user_id",
+    )
   })
 
   test("keepalive: arms on successful chat request and fires exactly once when session idles past threshold", async () => {

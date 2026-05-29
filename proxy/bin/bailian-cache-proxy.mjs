@@ -3,6 +3,10 @@
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import {
+  resolveAnthropicMetadataUserId,
+  resolveAnthropicUpstreamUserAgent,
+} from "../src/anthropic-env.mjs"
 import { createAnthropicHandler } from "../src/anthropic-handler.mjs"
 import { createKeepaliveManager } from "../src/keepalive.mjs"
 import { loadEnvFile } from "../src/load-env.mjs"
@@ -66,9 +70,14 @@ const keepaliveMinHits = envNumber("BAILIAN_CACHE_PROXY_KEEPALIVE_MIN_HITS", 2)
 // opts into the real one.
 const usageRecorder = createUsageRecorder({})
 
-const anthropicEnabled = process.env.BAILIAN_CACHE_PROXY_ANTHROPIC_ENABLED !== "0"
-const anthropicUpstreamBaseUrl = process.env.ANTHROPIC_UPSTREAM_BASE_URL || "https://dashscope.aliyuncs.com/apps/anthropic"
+const anthropicEnabled = process.env.ANTHROPIC_CACHE_PROXY_ENABLED !== "0"
+const anthropicUpstreamBaseUrl = process.env.ANTHROPIC_UPSTREAM_BASE_URL || "https://api.anthropic.com"
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY || ""
+const anthropicCacheStrategy = (
+  process.env.ANTHROPIC_CACHE_PROXY_STRATEGY || "cache"
+).toLowerCase().trim() || "cache"
+const anthropicUpstreamUserAgent = resolveAnthropicUpstreamUserAgent(process.env)
+const anthropicMetadataUserId = resolveAnthropicMetadataUserId(process.env)
 
 const anthropicKeepaliveManager = (anthropicEnabled && keepaliveEnabled)
   ? createKeepaliveManager({
@@ -84,9 +93,14 @@ const anthropicHandler = anthropicEnabled
   ? createAnthropicHandler({
       upstreamBaseUrl: anthropicUpstreamBaseUrl,
       apiKey: anthropicApiKey,
-      cacheOptions: { minCacheTokens: envNumber("BAILIAN_CACHE_PROXY_MIN_TOKENS", 1024) },
+      cacheOptions: {
+        minCacheTokens: envNumber("BAILIAN_CACHE_PROXY_MIN_TOKENS", 1024),
+        cacheStrategy: anthropicCacheStrategy,
+      },
       usageRecorder,
       keepaliveManager: anthropicKeepaliveManager,
+      upstreamUserAgent: anthropicUpstreamUserAgent,
+      metadataUserId: anthropicMetadataUserId,
     })
   : null
 

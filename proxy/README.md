@@ -74,6 +74,27 @@ elapses.
   [Cache Planning](#cache-planning) section for details.
 - `BAILIAN_CACHE_PROXY_KEEPALIVE`: activity-driven keepalive. Set to `0` to
   disable; default is `1` (enabled, 4.5 min threshold). See [Keepalive](#keepalive).
+- `ANTHROPIC_UPSTREAM_BASE_URL`: Anthropic Messages API upstream base URL.
+  Example: `https://example.com/api/anthropic`.
+- `ANTHROPIC_API_KEY`: fallback Anthropic API key, used when the request has no
+  `x-api-key` header.
+- `ANTHROPIC_CACHE_PROXY_ENABLED`: Anthropic Messages API route switch. Set to
+  `0` to disable; default is enabled.
+- `ANTHROPIC_CACHE_PROXY_STRATEGY`: Anthropic request handling strategy.
+  `cache` (default) applies the stable cache planner. `bypass` forwards the
+  original request body byte-for-byte while still recording response usage.
+- `ANTHROPIC_CACHE_PROXY_CLAUDE_COMPAT`: set to `1` to send a Claude
+  CLI-compatible upstream `user-agent` for relays that key routing on client
+  identity. Default is disabled.
+- `ANTHROPIC_CACHE_PROXY_USER_AGENT`: optional user-agent string used only when
+  `ANTHROPIC_CACHE_PROXY_CLAUDE_COMPAT=1`; defaults to a Claude CLI-compatible
+  value.
+- `ANTHROPIC_CACHE_PROXY_METADATA_USER_ID`: optional stable
+  `metadata.user_id` value to fill when the client does not send one. Used only
+  by `cache` mode; `bypass` remains byte-for-byte body passthrough. Set this to
+  a stable opaque value per user or deployment, such as a UUID. Do not commit a
+  real value or reuse the example placeholder. Change it only when you want to
+  isolate or reset that cache namespace.
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
 - `QWEN_BAILIAN_CACHE_PROXY=0`: disables Qwen hook-managed proxy startup.
 

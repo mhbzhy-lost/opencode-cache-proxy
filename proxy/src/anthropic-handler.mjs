@@ -1,7 +1,11 @@
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 
-import { planAnthropicCacheMarkers, truncateAnthropicBodyForKeepalive } from "./anthropic-cache-planner.mjs"
+import {
+  countAnthropicCacheMarkers,
+  planAnthropicCacheMarkers,
+  truncateAnthropicBodyForKeepalive,
+} from "./anthropic-cache-planner.mjs"
 import { extractAnthropicUsage } from "./anthropic-usage-extractor.mjs"
 
 const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024
@@ -61,7 +65,7 @@ const responseHeadersToObject = (headers) => {
   return result
 }
 
-const forwardHeaders = (request, bodyLength, fallbackApiKey) => {
+const forwardHeaders = (request, bodyLength, fallbackApiKey, { userAgent = "" } = {}) => {
   const headers = {}
   for (const [key, value] of Object.entries(request.headers)) {
     const lowerKey = key.toLowerCase()
@@ -73,6 +77,9 @@ const forwardHeaders = (request, bodyLength, fallbackApiKey) => {
   headers["content-length"] = String(bodyLength)
   if (!headers["x-api-key"] && fallbackApiKey) {
     headers["x-api-key"] = fallbackApiKey
+  }
+  if (userAgent) {
+    headers["user-agent"] = userAgent
   }
   return headers
 }
@@ -87,6 +94,24 @@ const computeAnthropicCacheHitRatio = (usage) => {
   return Math.round((cacheRead / total) * 10000) / 10000
 }
 
+const shouldBypassCachePlanning = (cacheOptions) =>
+  String(cacheOptions?.cacheStrategy || "").toLowerCase().trim() === "bypass"
+
+const fillMissingMetadataUserId = (body, metadataUserId) => {
+  if (!metadataUserId) return body
+  const metadata = body?.metadata
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata) && metadata.user_id !== undefined) {
+    return body
+  }
+  return {
+    ...body,
+    metadata: {
+      ...(metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {}),
+      user_id: metadataUserId,
+    },
+  }
+}
+
 export const createAnthropicHandler = ({
   upstreamBaseUrl,
   apiKey = "",
@@ -95,6 +120,8 @@ export const createAnthropicHandler = ({
   usageSniffBytes = DEFAULT_USAGE_SNIFF_BYTES,
   usageRecorder = { fireAndForget: () => {} },
   keepaliveManager = null,
+  upstreamUserAgent = "",
+  metadataUserId = "",
   logger = console,
   now = () => Date.now(),
 } = {}) => {
@@ -146,28 +173,46 @@ export const createAnthropicHandler = ({
 
     try {
       let bodyBuffer = await readBody(request, maxBodyBytes)
-      const body = JSON.parse(bodyBuffer.toString("utf8"))
+      let body = JSON.parse(bodyBuffer.toString("utf8"))
 
       parsedModel = body.model || null
       isStream = body.stream === true
 
-      const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, cacheOptions)
-      cacheDiagnostic = diagnostics
+      const bypassCachePlanning = shouldBypassCachePlanning(cacheOptions)
+      let planned = body
+      if (bypassCachePlanning) {
+        cacheDiagnostic = {
+          marker_count: 0,
+          total_estimated_tokens: null,
+          strategy: "anthropic-bypass",
+          forwarded_marker_count: countAnthropicCacheMarkers(body),
+          markers: [],
+        }
+      } else {
+        body = fillMissingMetadataUserId(body, metadataUserId)
+        const result = planAnthropicCacheMarkers(body, cacheOptions)
+        planned = result.body
+        cacheDiagnostic = result.diagnostics
+      }
 
       // Build keepalive body from markers
       let keepaliveBody = null
       let keepaliveSessionKey = null
-      if (diagnostics?.markers?.length >= 3) {
-        keepaliveBody = truncateAnthropicBodyForKeepalive(planned, diagnostics.markers)
-        keepaliveSessionKey = diagnostics.markers[0]?.prefix_hash ?? null
+      if (cacheDiagnostic?.markers?.length >= 3) {
+        keepaliveBody = truncateAnthropicBodyForKeepalive(planned, cacheDiagnostic.markers)
+        keepaliveSessionKey = cacheDiagnostic.markers[0]?.prefix_hash ?? null
       }
 
-      bodyBuffer = Buffer.from(JSON.stringify(planned))
+      if (!bypassCachePlanning) {
+        bodyBuffer = Buffer.from(JSON.stringify(planned))
+      }
 
       const upstreamUrl = `${upstreamBaseUrl.replace(/\/$/, "")}/v1/messages`
       const upstreamResponse = await fetch(upstreamUrl, {
         method: "POST",
-        headers: forwardHeaders(request, bodyBuffer.length, apiKey),
+        headers: forwardHeaders(request, bodyBuffer.length, apiKey, {
+          userAgent: upstreamUserAgent,
+        }),
         body: bodyBuffer,
       })
 

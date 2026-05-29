@@ -24,12 +24,42 @@ const toolResult = (id, content) => ({
   content: [{ type: "tool_result", tool_use_id: id, content }],
 })
 
+const thinking = (text) => ({
+  type: "thinking",
+  thinking: text,
+  signature: "sig-test",
+})
+
 const toolUse = (id, name) => ({
   role: "assistant",
   content: [{ type: "tool_use", id, name, input: {} }],
 })
 
 const repeat = (word, n) => Array.from({ length: n }, () => word).join(" ")
+
+const collectMarkerLocations = (body) => {
+  const locations = []
+  if (Array.isArray(body.tools)) {
+    for (let i = 0; i < body.tools.length; i++) {
+      if (body.tools[i]?.cache_control) locations.push(`tools.${i}`)
+    }
+  }
+  if (Array.isArray(body.system)) {
+    for (let i = 0; i < body.system.length; i++) {
+      if (body.system[i]?.cache_control) locations.push(`system.${i}`)
+    }
+  }
+  if (Array.isArray(body.messages)) {
+    for (let mi = 0; mi < body.messages.length; mi++) {
+      const content = body.messages[mi]?.content
+      if (!Array.isArray(content)) continue
+      for (let bi = 0; bi < content.length; bi++) {
+        if (content[bi]?.cache_control) locations.push(`messages.${mi}.${bi}`)
+      }
+    }
+  }
+  return locations
+}
 
 describe("planAnthropicCacheMarkers", () => {
   test("returns body unchanged when system + messages too short", () => {
@@ -144,6 +174,187 @@ describe("planAnthropicCacheMarkers", () => {
     const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
     assert.ok(diagnostics.marker_count >= 1)
     assert.equal(countAnthropicCacheMarkers(planned), diagnostics.marker_count)
+  })
+
+  test("does not place multiple cache markers within one message content array", () => {
+    const body = {
+      model: "qwen3.7-max",
+      system: systemBlocks(repeat("system", 300)),
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: repeat("a", 80) },
+            { type: "text", text: repeat("b", 80) },
+            { type: "text", text: repeat("c", 80) },
+            { type: "text", text: repeat("d", 80) },
+            { type: "text", text: repeat("e", 80) },
+          ],
+        },
+      ],
+    }
+
+    const { body: planned } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const markerIndexes = planned.messages[0].content
+      .map((block, index) => block.cache_control ? index : null)
+      .filter((index) => index !== null)
+
+    assert.deepEqual(markerIndexes, [4])
+  })
+
+  test("does not mark thinking blocks and reports thinking-only tail as uncacheable", () => {
+    const body = {
+      model: "qwen3.7-max",
+      system: systemBlocks(repeat("system", 300)),
+      messages: [
+        userText(repeat("turn", 300)),
+        { role: "assistant", content: [thinking(repeat("reason", 300))] },
+      ],
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+
+    assert.equal(planned.messages[1].content[0].cache_control, undefined)
+    assert.equal(diagnostics.thinking_uncacheable_tail, true)
+  })
+
+  test("uses a later legal tool_result marker to cache a prefix containing prior thinking", () => {
+    const body = {
+      model: "qwen3.7-max",
+      system: systemBlocks(repeat("system", 300)),
+      messages: [
+        userText(repeat("turn", 300)),
+        {
+          role: "assistant",
+          content: [
+            thinking(repeat("reason", 300)),
+            { type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "README.md" } },
+          ],
+        },
+        toolResult("toolu_1", repeat("result", 300)),
+      ],
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+
+    assert.equal(planned.messages[1].content[0].cache_control, undefined)
+    assert.deepEqual(planned.messages[2].content[0].cache_control, { type: "ephemeral" })
+    assert.equal(diagnostics.markers.at(-1).location, "tail")
+    assert.equal(diagnostics.markers.at(-1).role, "user")
+  })
+
+  test("keeps one existing legal marker per message when normalizing incoming Claude Code markers", () => {
+    const body = {
+      model: "qwen3.7-max",
+      system: systemBlocks(repeat("system", 300)),
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: repeat("a", 80), cache_control: { type: "ephemeral" } },
+            { type: "text", text: repeat("b", 80) },
+            { type: "text", text: repeat("c", 80), cache_control: { type: "ephemeral" } },
+          ],
+        },
+      ],
+    }
+
+    const { body: planned } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const markerIndexes = planned.messages[0].content
+      .map((block, index) => block.cache_control ? index : null)
+      .filter((index) => index !== null)
+
+    assert.deepEqual(markerIndexes, [2])
+  })
+
+  test("non-bypass cache strategy names do not change stable cache planning", () => {
+    const body = {
+      model: "qwen3.7-max",
+      system: [{ type: "text", text: repeat("system", 300), cache_control: { type: "ephemeral" } }],
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: repeat("a", 80), cache_control: { type: "ephemeral" } },
+            { type: "text", text: repeat("b", 80) },
+            { type: "text", text: repeat("c", 80), cache_control: { type: "ephemeral" } },
+          ],
+        },
+        {
+          role: "assistant",
+          content: [
+            { ...thinking(repeat("reason", 80)), cache_control: { type: "ephemeral" } },
+          ],
+        },
+        toolResult("toolu_1", repeat("result", 80)),
+      ],
+    }
+
+    const baseline = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+
+    for (const cacheStrategy of ["cache", "ignored-debug-value"]) {
+      const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, {
+        minCacheTokens: 32,
+        cacheStrategy,
+      })
+
+      assert.equal(diagnostics.strategy, "anthropic-turn-stable")
+      assert.deepEqual(planned, baseline.body)
+      assert.deepEqual(diagnostics.markers, baseline.diagnostics.markers)
+    }
+  })
+
+  test("bypass is handled outside the planner and does not alter stable cache planning", () => {
+    const body = {
+      model: "qwen3.7-max",
+      system: [{ type: "text", text: repeat("system", 300), cache_control: { type: "ephemeral" } }],
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: repeat("turn", 300), cache_control: { type: "ephemeral" } }],
+        },
+      ],
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, {
+      minCacheTokens: 32,
+      cacheStrategy: "bypass",
+    })
+
+    assert.equal(diagnostics.strategy, "anthropic-turn-stable")
+    assert.deepEqual(planned.system[0].cache_control, { type: "ephemeral" })
+    assert.deepEqual(planned.messages[0].content[0].cache_control, { type: "ephemeral" })
+    assert.equal(countAnthropicCacheMarkers(planned), 2)
+  })
+
+  test("reserves marker budget for existing tool cache markers", () => {
+    const body = {
+      model: "qwen3.7-max",
+      tools: [
+        {
+          name: "Read",
+          description: "Read files",
+          input_schema: { type: "object", properties: {} },
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      system: systemBlocks(repeat("system", 300)),
+      messages: [
+        userText(repeat("turn1", 200)),
+        assistantText(repeat("turn1-assistant", 200)),
+        userText(repeat("turn2", 200)),
+        assistantText(repeat("turn2-assistant", 200)),
+        userText(repeat("turn3", 200)),
+      ],
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const markerLocations = collectMarkerLocations(planned)
+
+    assert.ok(markerLocations.includes("tools.0"))
+    assert.equal(markerLocations.length, 4)
+    assert.equal(countAnthropicCacheMarkers(planned), 4)
+    assert.equal(diagnostics.marker_count, 3)
   })
 })
 

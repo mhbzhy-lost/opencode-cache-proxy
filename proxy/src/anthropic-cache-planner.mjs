@@ -6,6 +6,7 @@ const DEFAULT_MARKER_FRACTIONS = Object.freeze([0.5, 0.85])
 const MAX_LOOKBACK_GAP = 18
 
 const marker = Object.freeze({ type: "ephemeral" })
+const CACHEABLE_CONTENT_TYPES = new Set(["text", "tool_use", "tool_result"])
 
 const shortHash = (value) =>
   createHash("sha256").update(value).digest("hex").slice(0, 16)
@@ -41,8 +42,7 @@ const stripCacheControl = (block) => {
 
 const canMarkBlock = (block) => {
   if (!block || typeof block !== "object") return false
-  const t = block.type
-  return t === "text" || t === "thinking" || !t
+  return CACHEABLE_CONTENT_TYPES.has(block.type)
 }
 
 const isTurnAnchor = (message) => {
@@ -55,6 +55,11 @@ const isTurnAnchor = (message) => {
 
 export const countAnthropicCacheMarkers = (body) => {
   let count = 0
+  if (Array.isArray(body?.tools)) {
+    for (const tool of body.tools) {
+      if (tool?.cache_control) count += 1
+    }
+  }
   if (Array.isArray(body?.system)) {
     for (const block of body.system) {
       if (block?.cache_control) count += 1
@@ -93,7 +98,10 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     })
   }
 
-  // Build block index (system blocks + message blocks in sequence)
+  // Build block index (system blocks + message blocks in sequence).
+  // Bailian Qwen3.5+ treats cache breakpoints at message granularity. Keep
+  // selection to one marker per message so we do not generate schema-valid
+  // Anthropic shapes that the compatibility endpoint rejects.
   const blocks = []
   let prefixTokens = 0
   const prefixParts = []
@@ -113,6 +121,8 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
         canMark: canMarkBlock(block),
         role: "system",
         isTurnAnchor: false,
+        groupKey: "system",
+        blockType: block?.type ?? null,
         globalIndex: blocks.length,
       })
     }
@@ -137,9 +147,94 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
           canMark: canMarkBlock(block),
           role: msg.role,
           isTurnAnchor: msgIsTurnAnchor && bi === 0,
+          groupKey: `message:${mi}`,
+          blockType: block?.type ?? null,
           globalIndex: blocks.length,
         })
       }
+    }
+  }
+
+  const thinkingUncacheableTail = blocks.at(-1)?.blockType === "thinking" ||
+    blocks.at(-1)?.blockType === "redacted_thinking"
+  const existingToolMarkerCount = Array.isArray(planned.tools)
+    ? planned.tools.filter((tool) => tool?.cache_control).length
+    : 0
+  const markerBudget = Math.max(0, maxMarkers - existingToolMarkerCount)
+
+  const selected = new Map() // globalIndex → location label
+  const selectedByGroup = new Map() // system/message group → globalIndex
+
+  const removeSelectedIndex = (globalIndex) => {
+    selected.delete(globalIndex)
+    for (const [groupKey, selectedIndex] of selectedByGroup.entries()) {
+      if (selectedIndex === globalIndex) {
+        selectedByGroup.delete(groupKey)
+        break
+      }
+    }
+  }
+
+  const selectBlock = (block, label, { replaceLaterInGroup = false } = {}) => {
+    if (!block) return false
+    const existingIndex = selectedByGroup.get(block.groupKey)
+    if (existingIndex !== undefined) {
+      if (!replaceLaterInGroup || block.globalIndex <= existingIndex) return false
+      removeSelectedIndex(existingIndex)
+    }
+    selected.set(block.globalIndex, label)
+    selectedByGroup.set(block.groupKey, block.globalIndex)
+    return true
+  }
+
+  const finishSelected = (strategy) => {
+    // Keep only the remaining budget after existing tool markers.
+    const finalIndexes = markerBudget > 0
+      ? [...selected.keys()].sort((a, b) => a - b).slice(-markerBudget)
+      : []
+    const finalSet = new Set(finalIndexes)
+
+    // Apply markers
+    for (const block of blocks) {
+      if (!finalSet.has(block.globalIndex)) continue
+      if (block.location === "system") {
+        planned.system[block.systemIndex] = {
+          ...planned.system[block.systemIndex],
+          cache_control: { ...marker },
+        }
+      } else {
+        const msg = planned.messages[block.messageIndex]
+        msg.content[block.blockIndex] = {
+          ...msg.content[block.blockIndex],
+          cache_control: { ...marker },
+        }
+      }
+    }
+
+    // Build diagnostics
+    const markers = blocks
+      .filter((b) => finalSet.has(b.globalIndex))
+      .map((b) => ({
+        location: selected.get(b.globalIndex) || b.location,
+        role: b.role,
+        global_index: b.globalIndex,
+        block_index: b.globalIndex,
+        prefix_tokens: b.prefixTokens,
+        prefix_hash: b.prefixHash,
+        ...(b.location === "system"
+          ? { system_index: b.systemIndex }
+          : { message_index: b.messageIndex, content_index: b.blockIndex }),
+      }))
+
+    return {
+      body: planned,
+      diagnostics: {
+        marker_count: markers.length,
+        total_estimated_tokens: prefixTokens,
+        strategy,
+        thinking_uncacheable_tail: thinkingUncacheableTail,
+        markers,
+      },
     }
   }
 
@@ -147,27 +242,17 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
   const eligible = blocks.filter(
     (b) => b.canMark && b.prefixTokens >= minCacheTokens,
   )
-  if (eligible.length === 0 || maxMarkers <= 0) {
-    return {
-      body: planned,
-      diagnostics: {
-        marker_count: 0,
-        total_estimated_tokens: prefixTokens,
-        strategy: "anthropic-turn-stable",
-        markers: [],
-      },
-    }
+  if (eligible.length === 0) {
+    return finishSelected("anthropic-turn-stable")
   }
-
-  const selected = new Map() // globalIndex → location label
 
   // Slot 0: last system block
   const lastSystem = [...eligible].reverse().find((b) => b.location === "system")
-  if (lastSystem) selected.set(lastSystem.globalIndex, "system")
+  if (lastSystem) selectBlock(lastSystem, "system", { replaceLaterInGroup: true })
 
   // Slot 3: tail (last eligible block)
   const tail = eligible.at(-1)
-  selected.set(tail.globalIndex, "tail")
+  selectBlock(tail, "tail", { replaceLaterInGroup: true })
 
   // Find turn anchors (from tail backward, skip tail itself)
   const turnAnchors = []
@@ -180,28 +265,29 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
 
   // Slot 1 & 2: turn anchors
   if (turnAnchors.length >= 2) {
-    selected.set(turnAnchors[0].globalIndex, "turn-prev")
-    selected.set(turnAnchors[1].globalIndex, "turn-current")
+    selectBlock(turnAnchors[0], "turn-prev")
+    selectBlock(turnAnchors[1], "turn-current")
   } else if (turnAnchors.length === 1) {
-    selected.set(turnAnchors[0].globalIndex, "turn-current")
+    selectBlock(turnAnchors[0], "turn-current")
   }
 
-  // Fallback: fill remaining with fraction-based if < maxMarkers
-  if (selected.size < maxMarkers) {
+  // Fallback: fill remaining with fraction-based if < markerBudget
+  if (selected.size < markerBudget) {
     const stableEnd = lastSystem ? lastSystem.prefixTokens : 0
     const totalTokens = tail.prefixTokens
     const conversationTokens = totalTokens - stableEnd
     if (conversationTokens > 0) {
       for (const fraction of markerFractions) {
-        if (selected.size >= maxMarkers) break
+        if (selected.size >= markerBudget) break
         const targetTokens = stableEnd + conversationTokens * fraction
         const block = eligible.findLast(
           (b) =>
             b.prefixTokens <= targetTokens &&
             b.globalIndex !== tail.globalIndex &&
-            !selected.has(b.globalIndex),
+            !selected.has(b.globalIndex) &&
+            !selectedByGroup.has(b.groupKey),
         )
-        if (block) selected.set(block.globalIndex, "fraction")
+        if (block) selectBlock(block, "fraction")
       }
     }
   }
@@ -212,64 +298,21 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     const tailIdx = sortedIndexes.at(-1)
     const prevIdx = sortedIndexes.at(-2)
     if (tailIdx - prevIdx > MAX_LOOKBACK_GAP) {
-      selected.delete(tailIdx)
+      removeSelectedIndex(tailIdx)
       const cappedIdx = prevIdx + MAX_LOOKBACK_GAP
       const replacement = eligible.findLast(
-        (b) => b.globalIndex <= cappedIdx && !selected.has(b.globalIndex),
+        (b) =>
+          b.globalIndex <= cappedIdx &&
+          !selected.has(b.globalIndex) &&
+          !selectedByGroup.has(b.groupKey),
       )
       if (replacement) {
-        selected.set(replacement.globalIndex, "tail")
+        selectBlock(replacement, "tail")
       }
     }
   }
 
-  // Keep only last maxMarkers (sorted by position)
-  const finalIndexes = [...selected.keys()]
-    .sort((a, b) => a - b)
-    .slice(-maxMarkers)
-  const finalSet = new Set(finalIndexes)
-
-  // Apply markers
-  for (const block of blocks) {
-    if (!finalSet.has(block.globalIndex)) continue
-    if (block.location === "system") {
-      planned.system[block.systemIndex] = {
-        ...planned.system[block.systemIndex],
-        cache_control: { ...marker },
-      }
-    } else {
-      const msg = planned.messages[block.messageIndex]
-      msg.content[block.blockIndex] = {
-        ...msg.content[block.blockIndex],
-        cache_control: { ...marker },
-      }
-    }
-  }
-
-  // Build diagnostics
-  const markers = blocks
-    .filter((b) => finalSet.has(b.globalIndex))
-    .map((b) => ({
-      location: selected.get(b.globalIndex) || b.location,
-      role: b.role,
-      global_index: b.globalIndex,
-      block_index: b.globalIndex,
-      prefix_tokens: b.prefixTokens,
-      prefix_hash: b.prefixHash,
-      ...(b.location === "system"
-        ? { system_index: b.systemIndex }
-        : { message_index: b.messageIndex, content_index: b.blockIndex }),
-    }))
-
-  return {
-    body: planned,
-    diagnostics: {
-      marker_count: markers.length,
-      total_estimated_tokens: prefixTokens,
-      strategy: "anthropic-turn-stable",
-      markers,
-    },
-  }
+  return finishSelected("anthropic-turn-stable")
 }
 
 export const truncateAnthropicBodyForKeepalive = (body, markers) => {

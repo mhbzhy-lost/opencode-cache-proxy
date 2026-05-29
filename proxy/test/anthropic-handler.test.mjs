@@ -17,6 +17,12 @@ const readJson = async (request) => {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"))
 }
 
+const readText = async (request) => {
+  const chunks = []
+  for await (const chunk of request) chunks.push(chunk)
+  return Buffer.concat(chunks).toString("utf8")
+}
+
 const makeRequest = async (url, { method = "POST", headers = {}, body } = {}) => {
   const opts = { method, headers: { "content-type": "application/json", ...headers } }
   if (body !== undefined) opts.body = typeof body === "string" ? body : JSON.stringify(body)
@@ -24,6 +30,71 @@ const makeRequest = async (url, { method = "POST", headers = {}, body } = {}) =>
 }
 
 describe("createAnthropicHandler", () => {
+  test("bypass strategy forwards the original request body without mutation while recording usage", async () => {
+    let receivedRawBody
+    const upstream = createServer(async (request, response) => {
+      receivedRawBody = await readText(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({
+        id: "msg_bypass",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-4-6",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 1,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const records = []
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
+      apiKey: "sk-test",
+      cacheOptions: { cacheStrategy: "bypass", minCacheTokens: 1 },
+      metadataUserId: "proxy-user",
+      usageRecorder: { fireAndForget: (entry) => records.push(entry) },
+      logger: { error: () => {} },
+    })
+
+    const proxy = createServer((req, res) => handler(req, res))
+    const proxyAddress = await listen(proxy)
+
+    const rawBody = [
+      "{",
+      '"model":"claude-opus-4-6",',
+      '"max_tokens":10,',
+      '"system":[{"type":"text","text":"stable","cache_control":{"type":"ephemeral"}}],',
+      '"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]',
+      "}",
+    ].join("\n")
+
+    try {
+      const response = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          headers: { "x-api-key": "sk-user-key" },
+          body: rawBody,
+        },
+      )
+
+      assert.equal(response.status, 200)
+      await response.json()
+      assert.equal(receivedRawBody, rawBody)
+      assert.equal(records.length, 1)
+      assert.equal(records[0].cache_diagnostic.strategy, "anthropic-bypass")
+      assert.equal(records[0].cache_diagnostic.forwarded_marker_count, 1)
+      assert.equal(records[0].cache_diagnostic.marker_count, 0)
+    } finally {
+      await close(proxy)
+      await close(upstream)
+    }
+  })
+
   test("forwards request with cache markers added, returns upstream response, records usage with protocol anthropic", async () => {
     let received
     const upstream = createServer(async (request, response) => {
@@ -112,6 +183,107 @@ describe("createAnthropicHandler", () => {
     }
   })
 
+  test("fills missing metadata.user_id in cache mode when configured", async () => {
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedBody = await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({
+        id: "msg_metadata_user",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-4-6",
+        usage: { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
+      apiKey: "sk-test",
+      cacheOptions: { minCacheTokens: 1 },
+      metadataUserId: "opencode-cache-user",
+      usageRecorder: { fireAndForget: () => {} },
+      logger: { error: () => {} },
+    })
+
+    const proxy = createServer((req, res) => handler(req, res))
+    const proxyAddress = await listen(proxy)
+
+    try {
+      const response = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          body: {
+            model: "claude-opus-4-6",
+            max_tokens: 10,
+            metadata: { trace_id: "trace-1" },
+            messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          },
+        },
+      )
+
+      assert.equal(response.status, 200)
+      assert.deepEqual(receivedBody.metadata, {
+        trace_id: "trace-1",
+        user_id: "opencode-cache-user",
+      })
+    } finally {
+      await close(proxy)
+      await close(upstream)
+    }
+  })
+
+  test("preserves existing metadata.user_id in cache mode", async () => {
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedBody = await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({
+        id: "msg_existing_metadata_user",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-4-6",
+        usage: { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
+      apiKey: "sk-test",
+      cacheOptions: { minCacheTokens: 1 },
+      metadataUserId: "proxy-user",
+      usageRecorder: { fireAndForget: () => {} },
+      logger: { error: () => {} },
+    })
+
+    const proxy = createServer((req, res) => handler(req, res))
+    const proxyAddress = await listen(proxy)
+
+    try {
+      const response = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          body: {
+            model: "claude-opus-4-6",
+            max_tokens: 10,
+            metadata: { user_id: "client-user" },
+            messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          },
+        },
+      )
+
+      assert.equal(response.status, 200)
+      assert.equal(receivedBody.metadata.user_id, "client-user")
+    } finally {
+      await close(proxy)
+      await close(upstream)
+    }
+  })
+
   test("uses fallback apiKey when x-api-key not in request headers", async () => {
     let receivedHeaders
     const upstream = createServer(async (request, response) => {
@@ -156,6 +328,59 @@ describe("createAnthropicHandler", () => {
       assert.equal(response.status, 200)
       await response.json()
       assert.equal(receivedHeaders["x-api-key"], "sk-fallback-key")
+    } finally {
+      await close(proxy)
+      await close(upstream)
+    }
+  })
+
+  test("overrides upstream user-agent when configured", async () => {
+    let receivedHeaders
+    const upstream = createServer(async (request, response) => {
+      receivedHeaders = request.headers
+      await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({
+        id: "msg_user_agent",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-4-6",
+        usage: { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
+      apiKey: "sk-test",
+      cacheOptions: { cacheStrategy: "bypass" },
+      upstreamUserAgent: "claude-cli/test (external, sdk-cli)",
+      usageRecorder: { fireAndForget: () => {} },
+      logger: { error: () => {} },
+    })
+
+    const proxy = createServer((req, res) => handler(req, res))
+    const proxyAddress = await listen(proxy)
+
+    try {
+      const response = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          headers: {
+            "x-api-key": "sk-user",
+            "user-agent": "opencode/1.15.10",
+          },
+          body: {
+            model: "claude-opus-4-6",
+            max_tokens: 10,
+            messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          },
+        },
+      )
+
+      assert.equal(response.status, 200)
+      assert.equal(receivedHeaders["user-agent"], "claude-cli/test (external, sdk-cli)")
     } finally {
       await close(proxy)
       await close(upstream)
