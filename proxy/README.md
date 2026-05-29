@@ -24,14 +24,22 @@ unrelated providers and hooks. The OpenCode providers it writes to
       "name": "OpenAI-compatible cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
-        "apiKey": "{env:OPENAI_COMPATIBLE_API_KEY}"
+        "headers": {
+          "x-cache-proxy-upstream-base-url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "x-cache-proxy-marker-strategy": "turn-stable"
+        }
       }
     },
     "anthropic-cached": {
       "npm": "@ai-sdk/anthropic",
       "name": "Anthropic cached",
       "options": {
-        "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1"
+        "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1",
+        "headers": {
+          "x-cache-proxy-upstream-base-url": "https://api.anthropic.com",
+          "x-cache-proxy-cache-strategy": "cache",
+          "x-cache-proxy-metadata-user-id": "<stable-generated-id>"
+        }
       },
       "models": {
         "claude-opus-4-6": { "name": "Claude Opus 4.6" }
@@ -41,9 +49,10 @@ unrelated providers and hooks. The OpenCode providers it writes to
 }
 ```
 
-Authenticate `anthropic-cached` with OpenCode auth storage:
+Authenticate cached providers with OpenCode auth storage:
 
 ```bash
+opencode auth login -p openai-compatible-cached
 opencode auth login -p anthropic-cached
 ```
 
@@ -74,12 +83,12 @@ spawns a per-session keepalive process that sends the same heartbeat protocol.
 The proxy exits after all registered client pids are gone and the idle timeout
 elapses.
 
-## Environment
+## Runtime Environment
 
-- `OPENAI_COMPATIBLE_API_KEY`: upstream API key, used when the request has no
-  `Authorization` header (required).
-- `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL`: upstream base URL, default
-  `https://dashscope.aliyuncs.com/compatible-mode/v1`.
+OpenCode provider credentials and upstream routing are not read from
+`proxy/.env`. The production OpenCode path uses OpenCode auth storage for keys
+and provider `options.headers` for upstream/cache settings.
+
 - `BAILIAN_CACHE_PROXY_PORT`: local proxy port, default `48761`.
 - `BAILIAN_CACHE_PROXY_MIN_TOKENS`: minimum estimated prefix tokens before
   adding cache markers, default `1024`.
@@ -90,32 +99,6 @@ elapses.
   [Cache Planning](#cache-planning) section for details.
 - `BAILIAN_CACHE_PROXY_KEEPALIVE`: activity-driven keepalive. Set to `0` to
   disable; default is `1` (enabled, 4.5 min threshold). See [Keepalive](#keepalive).
-- `ANTHROPIC_UPSTREAM_BASE_URL`: Anthropic Messages API upstream base URL.
-  Example: `https://example.com/api/anthropic`.
-- `ANTHROPIC_API_KEY`: fallback Anthropic API key, used when the request has no
-  `x-api-key` header.
-- `ANTHROPIC_CACHE_PROXY_ENABLED`: Anthropic Messages API route switch. Set to
-  `0` to disable; default is enabled.
-- `ANTHROPIC_CACHE_PROXY_STRATEGY`: Anthropic request handling strategy.
-  `cache` (default) applies the stable cache planner. `bypass` forwards the
-  original request body byte-for-byte while still recording response usage.
-- `ANTHROPIC_CACHE_PROXY_CLAUDE_COMPAT`: set to `1` to send a Claude
-  CLI-compatible upstream `user-agent` for relays that key routing on client
-  identity. Default is disabled.
-- `ANTHROPIC_CACHE_PROXY_USER_AGENT`: optional user-agent string used only when
-  `ANTHROPIC_CACHE_PROXY_CLAUDE_COMPAT=1`; defaults to a Claude CLI-compatible
-  value.
-- `ANTHROPIC_CACHE_PROXY_METADATA_USER_ID`: optional stable
-  `metadata.user_id` value to fill when the client does not send one. Used only
-  by `cache` mode; `bypass` remains byte-for-byte body passthrough. Set this to
-  a stable opaque value per user or deployment, such as a UUID. Do not commit a
-  real value or reuse the example placeholder. Change it only when you want to
-  isolate or reset that cache namespace.
-- `OPENCODE_CACHE_PROXY_ANTHROPIC_API_KEY_ENV`: optional env var name written
-  into the OpenCode `anthropic-cached` provider. Leave unset to use OpenCode
-  auth storage via `opencode auth login -p anthropic-cached`.
-- `OPENCODE_CACHE_PROXY_ANTHROPIC_MODELS`: comma-separated model ids written
-  into the OpenCode `anthropic-cached` provider, default `claude-opus-4-6`.
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
 - `QWEN_BAILIAN_CACHE_PROXY=0`: disables Qwen hook-managed proxy startup.
 

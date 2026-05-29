@@ -46,7 +46,15 @@ describe("client cache proxy configuration", () => {
       "http://127.0.0.1:49876/compatible-mode/v1",
     )
     assert.equal(config.provider["openai-compatible-cached"].name, "OpenAI-compatible cached")
-    assert.equal(config.provider["openai-compatible-cached"].options.apiKey, "{env:OPENAI_COMPATIBLE_API_KEY}")
+    assert.equal(config.provider["openai-compatible-cached"].options.apiKey, undefined)
+    assert.equal(
+      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+    assert.equal(
+      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-marker-strategy"],
+      "turn-stable",
+    )
     assert.equal(config.provider["anthropic-cached"].npm, "@ai-sdk/anthropic")
     assert.equal(config.provider["anthropic-cached"].name, "Anthropic cached")
     assert.equal(
@@ -54,6 +62,18 @@ describe("client cache proxy configuration", () => {
       "http://127.0.0.1:49876/apps/anthropic/v1",
     )
     assert.equal(config.provider["anthropic-cached"].options.apiKey, undefined)
+    assert.equal(
+      config.provider["anthropic-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://api.anthropic.com",
+    )
+    assert.equal(
+      config.provider["anthropic-cached"].options.headers["x-cache-proxy-cache-strategy"],
+      "cache",
+    )
+    assert.match(
+      config.provider["anthropic-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    )
     assert.deepEqual(Object.keys(config.provider["anthropic-cached"].models), ["claude-opus-4-6"])
     assert.deepEqual(Object.keys(config.provider["openai-compatible-cached"].models), [
       "qwen3.6-plus",
@@ -69,7 +89,7 @@ describe("client cache proxy configuration", () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  test("allows opting the OpenCode Anthropic provider into env auth and custom models", async () => {
+  test("allows customizing OpenCode provider upstream headers and models", async () => {
     const dir = await makeTempDir()
     const configPath = join(dir, "opencode.json")
 
@@ -77,18 +97,74 @@ describe("client cache proxy configuration", () => {
       configPath,
       repoRoot,
       port: 49876,
-      anthropicApiKeyEnv: "CUSTOM_ANTHROPIC_KEY",
+      openaiUpstreamBaseUrl: "https://openai.example/v1",
+      markerStrategy: "fraction",
+      anthropicUpstreamBaseUrl: "https://anthropic.example",
+      anthropicCacheStrategy: "bypass",
+      anthropicMetadataUserId: "stable-user",
       anthropicModelIds: ["claude-opus-4-6", "claude-sonnet-4-6"],
     })
 
     const config = await readJson(configPath)
 
     assert.equal(result.changed, true)
-    assert.equal(config.provider["anthropic-cached"].options.apiKey, "{env:CUSTOM_ANTHROPIC_KEY}")
+    assert.equal(
+      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://openai.example/v1",
+    )
+    assert.equal(
+      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-marker-strategy"],
+      "fraction",
+    )
+    assert.equal(
+      config.provider["anthropic-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://anthropic.example",
+    )
+    assert.equal(
+      config.provider["anthropic-cached"].options.headers["x-cache-proxy-cache-strategy"],
+      "bypass",
+    )
+    assert.equal(
+      config.provider["anthropic-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      "stable-user",
+    )
     assert.deepEqual(Object.keys(config.provider["anthropic-cached"].models), [
       "claude-opus-4-6",
       "claude-sonnet-4-6",
     ])
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test("preserves an existing OpenCode Anthropic metadata user id", async () => {
+    const dir = await makeTempDir()
+    const configPath = join(dir, "opencode.json")
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        provider: {
+          "anthropic-cached": {
+            npm: "@ai-sdk/anthropic",
+            name: "Anthropic cached",
+            options: {
+              baseURL: "http://127.0.0.1:48761/apps/anthropic/v1",
+              headers: {
+                "x-cache-proxy-metadata-user-id": "existing-stable-user",
+              },
+            },
+            models: { "claude-opus-4-6": { name: "Claude Opus 4.6" } },
+          },
+        },
+      }),
+    )
+
+    await configureOpenCodeCacheProxy({ configPath, repoRoot })
+
+    const config = await readJson(configPath)
+    assert.equal(
+      config.provider["anthropic-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      "existing-stable-user",
+    )
 
     await rm(dir, { recursive: true, force: true })
   })

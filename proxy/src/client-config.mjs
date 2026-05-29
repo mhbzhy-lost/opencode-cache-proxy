@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto"
 import { mkdir, readFile, readdir, rename, rm, symlink, writeFile, lstat, readlink } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
 const DEFAULT_PORT = 48761
+const DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+const DEFAULT_ANTHROPIC_UPSTREAM_BASE_URL = "https://api.anthropic.com"
+const DEFAULT_MARKER_STRATEGY = "turn-stable"
+const DEFAULT_ANTHROPIC_CACHE_STRATEGY = "cache"
 const OPENCODE_PROVIDER_ID = "openai-compatible-cached"
 const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-cached"
 const LEGACY_OPENCODE_PROVIDER_IDS = ["bailian-cache", "bailian-custom-cached"]
@@ -82,12 +87,19 @@ const ensureArrayIncludes = (value, item) => {
   return list
 }
 
-export const buildOpenCodeProvider = ({ port = DEFAULT_PORT, apiKeyEnv = "OPENAI_COMPATIBLE_API_KEY" } = {}) => ({
+export const buildOpenCodeProvider = ({
+  port = DEFAULT_PORT,
+  upstreamBaseUrl = DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL,
+  markerStrategy = DEFAULT_MARKER_STRATEGY,
+} = {}) => ({
   npm: "@ai-sdk/openai-compatible",
   name: "OpenAI-compatible cached",
   options: {
     baseURL: `http://127.0.0.1:${port}/compatible-mode/v1`,
-    apiKey: `{env:${apiKeyEnv}}`,
+    headers: {
+      "x-cache-proxy-upstream-base-url": upstreamBaseUrl,
+      "x-cache-proxy-marker-strategy": markerStrategy,
+    },
   },
   models: {
     "qwen3.6-plus": { name: "Qwen 3.6 Plus" },
@@ -101,14 +113,23 @@ export const buildOpenCodeProvider = ({ port = DEFAULT_PORT, apiKeyEnv = "OPENAI
 
 export const buildOpenCodeAnthropicProvider = ({
   port = DEFAULT_PORT,
-  apiKeyEnv = null,
+  existing = null,
+  upstreamBaseUrl = DEFAULT_ANTHROPIC_UPSTREAM_BASE_URL,
+  cacheStrategy = DEFAULT_ANTHROPIC_CACHE_STRATEGY,
+  metadataUserId = null,
   modelIds = ["claude-opus-4-6"],
 } = {}) => ({
   npm: "@ai-sdk/anthropic",
   name: "Anthropic cached",
   options: {
     baseURL: `http://127.0.0.1:${port}/apps/anthropic/v1`,
-    ...(apiKeyEnv ? { apiKey: `{env:${apiKeyEnv}}` } : {}),
+    headers: {
+      "x-cache-proxy-upstream-base-url": upstreamBaseUrl,
+      "x-cache-proxy-cache-strategy": cacheStrategy,
+      "x-cache-proxy-metadata-user-id": metadataUserId ||
+        existing?.options?.headers?.["x-cache-proxy-metadata-user-id"] ||
+        randomUUID(),
+    },
   },
   models: Object.fromEntries(
     modelIds.map((modelId) => [modelId, { name: ANTHROPIC_MODEL_NAMES[modelId] || modelId }]),
@@ -119,8 +140,11 @@ export const configureOpenCodeCacheProxy = async ({
   configPath = defaultOpenCodeConfigPath(),
   repoRoot,
   port = DEFAULT_PORT,
-  apiKeyEnv = "OPENAI_COMPATIBLE_API_KEY",
-  anthropicApiKeyEnv = null,
+  openaiUpstreamBaseUrl = DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL,
+  markerStrategy = DEFAULT_MARKER_STRATEGY,
+  anthropicUpstreamBaseUrl = DEFAULT_ANTHROPIC_UPSTREAM_BASE_URL,
+  anthropicCacheStrategy = DEFAULT_ANTHROPIC_CACHE_STRATEGY,
+  anthropicMetadataUserId = null,
   anthropicModelIds = ["claude-opus-4-6"],
   pluginMode = "plugin-list",
   pluginDir = null,
@@ -143,7 +167,11 @@ export const configureOpenCodeCacheProxy = async ({
     }
   }
 
-  const desiredProvider = buildOpenCodeProvider({ port, apiKeyEnv })
+  const desiredProvider = buildOpenCodeProvider({
+    port,
+    upstreamBaseUrl: openaiUpstreamBaseUrl,
+    markerStrategy,
+  })
   if (!jsonEqual(providers[OPENCODE_PROVIDER_ID], desiredProvider)) {
     providers[OPENCODE_PROVIDER_ID] = desiredProvider
     messages.push(`[provider] ${OPENCODE_PROVIDER_ID} configured`)
@@ -153,7 +181,10 @@ export const configureOpenCodeCacheProxy = async ({
 
   const desiredAnthropicProvider = buildOpenCodeAnthropicProvider({
     port,
-    apiKeyEnv: anthropicApiKeyEnv,
+    existing: providers[OPENCODE_ANTHROPIC_PROVIDER_ID],
+    upstreamBaseUrl: anthropicUpstreamBaseUrl,
+    cacheStrategy: anthropicCacheStrategy,
+    metadataUserId: anthropicMetadataUserId,
     modelIds: anthropicModelIds,
   })
   if (!jsonEqual(providers[OPENCODE_ANTHROPIC_PROVIDER_ID], desiredAnthropicProvider)) {

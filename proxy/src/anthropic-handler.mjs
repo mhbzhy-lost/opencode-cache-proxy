@@ -7,6 +7,7 @@ import {
   truncateAnthropicBodyForKeepalive,
 } from "./anthropic-cache-planner.mjs"
 import { extractAnthropicUsage } from "./anthropic-usage-extractor.mjs"
+import { extractProxyControlHeaders } from "./proxy-control-headers.mjs"
 
 const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024
 const DEFAULT_USAGE_SNIFF_BYTES = 64 * 1024
@@ -65,9 +66,9 @@ const responseHeadersToObject = (headers) => {
   return result
 }
 
-const forwardHeaders = (request, bodyLength, fallbackApiKey, { userAgent = "" } = {}) => {
+const forwardHeaders = (requestHeaders, bodyLength, fallbackApiKey, { userAgent = "" } = {}) => {
   const headers = {}
-  for (const [key, value] of Object.entries(request.headers)) {
+  for (const [key, value] of Object.entries(requestHeaders)) {
     const lowerKey = key.toLowerCase()
     if (lowerKey === "host" || lowerKey === "content-length") continue
     if (lowerKey === "content-encoding") continue
@@ -172,13 +173,22 @@ export const createAnthropicHandler = ({
     }
 
     try {
+      const { control, headers: upstreamRequestHeaders } = extractProxyControlHeaders(request.headers)
+      const requestUpstreamBaseUrl = control.upstreamBaseUrl || upstreamBaseUrl
+      const requestCacheOptions = {
+        ...cacheOptions,
+        ...(control.cacheStrategy ? { cacheStrategy: control.cacheStrategy } : {}),
+      }
+      const requestMetadataUserId = control.metadataUserId || metadataUserId
+      const requestUpstreamUserAgent = control.upstreamUserAgent || upstreamUserAgent
+
       let bodyBuffer = await readBody(request, maxBodyBytes)
       let body = JSON.parse(bodyBuffer.toString("utf8"))
 
       parsedModel = body.model || null
       isStream = body.stream === true
 
-      const bypassCachePlanning = shouldBypassCachePlanning(cacheOptions)
+      const bypassCachePlanning = shouldBypassCachePlanning(requestCacheOptions)
       let planned = body
       if (bypassCachePlanning) {
         cacheDiagnostic = {
@@ -189,8 +199,8 @@ export const createAnthropicHandler = ({
           markers: [],
         }
       } else {
-        body = fillMissingMetadataUserId(body, metadataUserId)
-        const result = planAnthropicCacheMarkers(body, cacheOptions)
+        body = fillMissingMetadataUserId(body, requestMetadataUserId)
+        const result = planAnthropicCacheMarkers(body, requestCacheOptions)
         planned = result.body
         cacheDiagnostic = result.diagnostics
       }
@@ -207,11 +217,11 @@ export const createAnthropicHandler = ({
         bodyBuffer = Buffer.from(JSON.stringify(planned))
       }
 
-      const upstreamUrl = `${upstreamBaseUrl.replace(/\/$/, "")}/v1/messages`
+      const upstreamUrl = `${requestUpstreamBaseUrl.replace(/\/$/, "")}/v1/messages`
       const upstreamResponse = await fetch(upstreamUrl, {
         method: "POST",
-        headers: forwardHeaders(request, bodyBuffer.length, apiKey, {
-          userAgent: upstreamUserAgent,
+        headers: forwardHeaders(upstreamRequestHeaders, bodyBuffer.length, apiKey, {
+          userAgent: requestUpstreamUserAgent,
         }),
         body: bodyBuffer,
       })
@@ -278,7 +288,7 @@ export const createAnthropicHandler = ({
             truncatedBody: keepaliveBody,
             model: parsedModel,
             url: upstreamUrl,
-            authHeader: request.headers["x-api-key"] || (apiKey ? apiKey : null),
+            authHeader: upstreamRequestHeaders["x-api-key"] || (apiKey ? apiKey : null),
           })
         }
       }

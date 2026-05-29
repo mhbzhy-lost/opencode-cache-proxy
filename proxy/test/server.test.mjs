@@ -74,6 +74,61 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("uses OpenCode provider control headers for upstream routing without forwarding them", async () => {
+    let received
+    const upstream = createServer(async (request, response) => {
+      received = {
+        url: request.url,
+        authorization: request.headers.authorization,
+        controlHeader: request.headers["x-cache-proxy-upstream-base-url"],
+        markerHeader: request.headers["x-cache-proxy-marker-strategy"],
+        body: await readJson(request),
+      }
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ id: "chatcmpl-provider-config", choices: [] }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: "http://127.0.0.1:9/compatible-mode/v1",
+      cacheOptions: { minCacheTokens: 16 },
+      lifecycle: false,
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer sk-client",
+            "content-type": "application/json",
+            "x-cache-proxy-upstream-base-url": `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+            "x-cache-proxy-marker-strategy": "fraction",
+          },
+          body: JSON.stringify({
+            model: "qwen3.6-plus",
+            messages: [
+              { role: "system", content: "stable ".repeat(120) },
+              { role: "user", content: "go" },
+            ],
+          }),
+        },
+      )
+
+      assert.equal(response.status, 200)
+      assert.equal(received.url, "/compatible-mode/v1/chat/completions")
+      assert.equal(received.authorization, "Bearer sk-client")
+      assert.equal(received.controlHeader, undefined)
+      assert.equal(received.markerHeader, undefined)
+      assert.equal(received.body.model, "qwen3.6-plus")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("resolveDefaultApiKey reads OPENAI_COMPATIBLE_API_KEY", () => {
     assert.equal(
       resolveDefaultApiKey({ OPENAI_COMPATIBLE_API_KEY: "sk-test" }),
@@ -839,35 +894,15 @@ describe("createBailianCacheProxy", () => {
       /usageRecorder\s*[,}]/,
       "production entrypoint must pass usageRecorder into createBailianCacheProxy",
     )
-    assert.match(
+    assert.doesNotMatch(
       binSrc,
-      /process\.env\.ANTHROPIC_CACHE_PROXY_ENABLED/,
-      "Anthropic-specific enable switch must not use a Bailian-prefixed env var",
-    )
-    assert.match(
-      binSrc,
-      /process\.env\.ANTHROPIC_CACHE_PROXY_STRATEGY/,
-      "Anthropic-specific strategy must not use a Bailian-prefixed env var",
-    )
-    assert.match(
-      binSrc,
-      /resolveAnthropicUpstreamUserAgent\(process\.env\)/,
-      "Anthropic-compatible Claude identity compatibility must be resolved through the shared env helper",
-    )
-    assert.match(
-      binSrc,
-      /resolveAnthropicMetadataUserId\(process\.env\)/,
-      "Anthropic metadata.user_id override must be resolved through the shared env helper",
+      /loadEnvFile|envPath|proxy-local \.env|\.env present|\.env at/,
+      "OpenCode production proxy entrypoint must not load proxy-local .env",
     )
     assert.doesNotMatch(
       binSrc,
       new RegExp(["BAILIAN", "CACHE_PROXY_ANTHROPIC_"].join("_")),
       "Anthropic-specific env vars must not be provider-prefixed",
-    )
-    assert.match(
-      binSrc,
-      /process\.env\.ANTHROPIC_UPSTREAM_BASE_URL \|\| "https:\/\/api\.anthropic\.com"/,
-      "Anthropic default upstream must be the standard Anthropic API shape",
     )
     assert.doesNotMatch(
       binSrc,

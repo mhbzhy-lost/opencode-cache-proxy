@@ -22,9 +22,15 @@ Options:
   --opencode-config <path>           opencode.json path
   --opencode-plugin-mode <mode>      plugin-list or symlink (default: plugin-list)
   --opencode-plugin-dir <path>       host-managed plugin dir for symlink mode
-  --opencode-api-key-env <name>      OpenCode provider env var (default: OPENAI_COMPATIBLE_API_KEY)
-  --opencode-anthropic-api-key-env <name>
-                                      optional OpenCode Anthropic provider env var; omit to use opencode auth
+  --opencode-openai-upstream-base-url <url>
+                                      OpenCode proxy upstream header for OpenAI-compatible route
+  --opencode-marker-strategy <name>  OpenCode proxy cache marker strategy header
+  --opencode-anthropic-upstream-base-url <url>
+                                      OpenCode proxy upstream header for Anthropic route
+  --opencode-anthropic-cache-strategy <name>
+                                      OpenCode proxy Anthropic cache strategy header
+  --opencode-anthropic-metadata-user-id <id>
+                                      OpenCode proxy stable Anthropic metadata.user_id header
   --opencode-anthropic-models <csv>  OpenCode Anthropic model ids (default: claude-opus-4-6)
   --qwen-settings <path>             Qwen Code settings.json path
   --qwen-base-url <url>              Qwen local provider baseUrl
@@ -80,8 +86,11 @@ const main = async () => {
       configPath: options["opencode-config"] || defaultOpenCodeConfigPath(),
       repoRoot,
       port,
-      apiKeyEnv: options["opencode-api-key-env"] || "OPENAI_COMPATIBLE_API_KEY",
-      anthropicApiKeyEnv: options["opencode-anthropic-api-key-env"] || undefined,
+      openaiUpstreamBaseUrl: options["opencode-openai-upstream-base-url"] || undefined,
+      markerStrategy: options["opencode-marker-strategy"] || undefined,
+      anthropicUpstreamBaseUrl: options["opencode-anthropic-upstream-base-url"] || undefined,
+      anthropicCacheStrategy: options["opencode-anthropic-cache-strategy"] || undefined,
+      anthropicMetadataUserId: options["opencode-anthropic-metadata-user-id"] || undefined,
       anthropicModelIds: options["opencode-anthropic-models"]
         ? splitCsv(options["opencode-anthropic-models"])
         : undefined,

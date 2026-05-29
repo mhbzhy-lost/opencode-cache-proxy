@@ -7,12 +7,9 @@
  * for one-shot startup work only. Do **not** call it from request handlers,
  * tool.execute hooks, or any hot path — it will block the Node event loop.
  *
- * Used by:
- *   - bin/bailian-cache-proxy.mjs   so the proxy is self-sufficient when
- *                                   spawned by the OpenCode plugin (the
- *                                   client process env may not carry
- *                                   OPENAI_COMPATIBLE_API_KEY / upstream URL).
- *   - scripts/e2e-bailian-cache.mjs so manual e2e runs pick up the same .env.
+ * Used only by non-OpenCode compatibility paths. The production OpenCode
+ * entrypoint does not load proxy/.env; provider keys live in OpenCode auth
+ * storage and provider routing config lives in opencode.json headers.
  */
 
 import { existsSync, readFileSync } from "node:fs"

@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises"
 import { planBailianCacheMarkersWithDiagnostics, truncateBodyForKeepalive } from "./cache-planner.mjs"
 import { createKeepaliveManager } from "./keepalive.mjs"
 import { createLifecycleTracker } from "./lifecycle.mjs"
+import { extractProxyControlHeaders } from "./proxy-control-headers.mjs"
 import { applyThinkModeRewrite } from "./think-mode-rewriter.mjs"
 import { ensureStreamUsageOption, extractUsage } from "./usage-extractor.mjs"
 import { buildUsageRecord, createUsageRecorder } from "./usage-recorder.mjs"
@@ -117,9 +118,9 @@ const hasUnsupportedContentEncoding = (request) => {
   return Boolean(encoding && String(encoding).toLowerCase() !== "identity")
 }
 
-const forwardHeaders = (request, bodyLength, apiKey) => {
+const forwardHeaders = (requestHeaders, bodyLength, apiKey) => {
   const headers = {}
-  for (const [key, value] of Object.entries(request.headers)) {
+  for (const [key, value] of Object.entries(requestHeaders)) {
     const lowerKey = key.toLowerCase()
     if (lowerKey === "host" || lowerKey === "content-length") continue
     if (lowerKey === "content-encoding") continue
@@ -249,6 +250,14 @@ export const createBailianCacheProxy = ({
     }
 
     try {
+      const { control, headers: upstreamRequestHeaders } = extractProxyControlHeaders(request.headers)
+      const requestUpstreamBaseUrl = control.upstreamBaseUrl || upstreamBaseUrl
+      const requestCacheOptions = {
+        ...cacheOptions,
+        ...(control.markerStrategy ? { markerStrategy: control.markerStrategy } : {}),
+      }
+      const upstreamUrl = buildUpstreamUrl(request.url, requestUpstreamBaseUrl)
+
       if (!isAllowedUpstreamPath(request)) {
         writeJson(response, 404, { error: "not_found" })
         recordOnce({ status: 404, proxy_error: "not_found" })
@@ -271,7 +280,7 @@ export const createBailianCacheProxy = ({
         // The alias is what the user picked in the client — keep it on the
         // usage record so cache-stats can split -nothink vs default cohorts.
         parsedRequestModel = alias
-        const plannedResult = planBailianCacheMarkersWithDiagnostics(rewrittenBody, cacheOptions)
+        const plannedResult = planBailianCacheMarkersWithDiagnostics(rewrittenBody, requestCacheOptions)
         let planned = plannedResult.body
         cacheDiagnostic = plannedResult.diagnostics
         keepaliveBody = plannedResult.diagnostics?.markers
@@ -287,9 +296,9 @@ export const createBailianCacheProxy = ({
         bodyBuffer = Buffer.from(JSON.stringify(planned))
       }
 
-      const upstreamResponse = await fetch(buildUpstreamUrl(request.url, upstreamBaseUrl), {
+      const upstreamResponse = await fetch(upstreamUrl, {
         method: request.method,
-        headers: forwardHeaders(request, bodyBuffer.length, apiKey),
+        headers: forwardHeaders(upstreamRequestHeaders, bodyBuffer.length, apiKey),
         body: request.method === "GET" || request.method === "HEAD" ? undefined : bodyBuffer,
       })
 
@@ -362,8 +371,8 @@ export const createBailianCacheProxy = ({
             pid: request.headers["x-opencode-pid"] ? Number(request.headers["x-opencode-pid"]) : null,
             truncatedBody: keepaliveBody,
             model: parsedRequestModel,
-            url: buildUpstreamUrl(request.url, upstreamBaseUrl).toString(),
-            authHeader: request.headers.authorization || (apiKey ? `Bearer ${apiKey}` : null),
+            url: upstreamUrl.toString(),
+            authHeader: upstreamRequestHeaders.authorization || (apiKey ? `Bearer ${apiKey}` : null),
           })
         }
       }

@@ -95,6 +95,77 @@ describe("createAnthropicHandler", () => {
     }
   })
 
+  test("uses OpenCode provider control headers for Anthropic upstream config and strips them", async () => {
+    let received
+    const upstream = createServer(async (request, response) => {
+      received = {
+        url: request.url,
+        xApiKey: request.headers["x-api-key"],
+        controlHeader: request.headers["x-cache-proxy-upstream-base-url"],
+        strategyHeader: request.headers["x-cache-proxy-cache-strategy"],
+        rawBody: await readText(request),
+      }
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({
+        id: "msg_provider_config",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-4-6",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 1,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: "http://127.0.0.1:9",
+      cacheOptions: { cacheStrategy: "cache", minCacheTokens: 1 },
+      metadataUserId: "constructor-user",
+      usageRecorder: { fireAndForget: () => {} },
+      logger: { error: () => {} },
+    })
+
+    const proxy = createServer((req, res) => handler(req, res))
+    const proxyAddress = await listen(proxy)
+
+    const rawBody = JSON.stringify({
+      model: "claude-opus-4-6",
+      max_tokens: 10,
+      system: [{ type: "text", text: "stable" }],
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    })
+
+    try {
+      const response = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          headers: {
+            "x-api-key": "sk-client",
+            "x-cache-proxy-upstream-base-url": `http://127.0.0.1:${upstreamAddress.port}`,
+            "x-cache-proxy-cache-strategy": "bypass",
+            "x-cache-proxy-metadata-user-id": "header-user",
+          },
+          body: rawBody,
+        },
+      )
+
+      assert.equal(response.status, 200)
+      assert.equal(received.url, "/v1/messages")
+      assert.equal(received.xApiKey, "sk-client")
+      assert.equal(received.controlHeader, undefined)
+      assert.equal(received.strategyHeader, undefined)
+      assert.equal(received.rawBody, rawBody)
+    } finally {
+      await close(proxy)
+      await close(upstream)
+    }
+  })
+
   test("forwards request with cache markers added, returns upstream response, records usage with protocol anthropic", async () => {
     let received
     const upstream = createServer(async (request, response) => {

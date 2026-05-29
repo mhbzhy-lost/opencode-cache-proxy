@@ -31,7 +31,7 @@ proxy/
   src/        Server, cache planner, lifecycle, usage recorder
   test/       Unit tests (Node built-in test runner)
   scripts/    CLI tools (cache-stats, e2e)
-  .env.example
+  .env.example  Deprecated for the OpenCode-managed path
 plugins/
   bailian-cache-proxy.js    OpenCode plugin (auto-start + heartbeat)
 ```
@@ -41,7 +41,7 @@ plugins/
 - **Node.js** >= 20 (uses `node:test`, `fetch`, ESM)
 - **OpenCode** ([install](https://opencode.ai)), **Qwen Code**, or another
   OpenAI-compatible client
-- `OPENAI_COMPATIBLE_API_KEY` — your upstream API key
+- For OpenCode, provider API keys are collected with `opencode auth login`.
 
 ## Setup
 
@@ -56,15 +56,18 @@ git clone https://github.com/mhbzhy-lost/opencode-cache-proxy.git
 cd opencode-cache-proxy
 ```
 
-### 2. Configure credentials
+### 2. Configure OpenCode credentials
 
 ```bash
-cp proxy/.env.example proxy/.env
-# Edit proxy/.env — set OPENAI_COMPATIBLE_API_KEY
+node proxy/bin/bailian-cache-proxy-configure.mjs opencode
+opencode auth login -p openai-compatible-cached
+opencode auth login -p anthropic-cached
 ```
 
-`.env` is gitignored. The proxy loads it on startup so it works even when
-the client is launched from a GUI or a shell without exported API credentials.
+OpenCode stores provider keys in `~/.local/share/opencode/auth.json`. The
+OpenCode provider config carries proxy-only upstream/cache settings in
+`options.headers`; the proxy strips those `x-cache-proxy-*` headers before
+forwarding requests upstream.
 
 ### 3. Configure a client
 
@@ -106,7 +109,10 @@ Add a custom provider in your `opencode.json` (usually at
       "name": "OpenAI-compatible cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
-        "apiKey": "{env:OPENAI_COMPATIBLE_API_KEY}"
+        "headers": {
+          "x-cache-proxy-upstream-base-url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "x-cache-proxy-marker-strategy": "turn-stable"
+        }
       },
       "models": {
         "qwen3.6-plus":           { "name": "Qwen 3.6 Plus" },
@@ -121,7 +127,12 @@ Add a custom provider in your `opencode.json` (usually at
       "npm": "@ai-sdk/anthropic",
       "name": "Anthropic cached",
       "options": {
-        "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1"
+        "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1",
+        "headers": {
+          "x-cache-proxy-upstream-base-url": "https://api.anthropic.com",
+          "x-cache-proxy-cache-strategy": "cache",
+          "x-cache-proxy-metadata-user-id": "<stable-generated-id>"
+        }
       },
       "models": {
         "claude-opus-4-6": { "name": "Claude Opus 4.6" }
@@ -136,16 +147,13 @@ the OpenAI-compatible chat-completions route; `anthropic-cached` uses the
 Anthropic Messages route via `@ai-sdk/anthropic`. Other OpenCode providers are
 unaffected.
 
-For `anthropic-cached`, use OpenCode's provider auth flow so the provider key is
-stored in `~/.local/share/opencode/auth.json`:
+Use OpenCode's provider auth flow so provider keys are stored in
+`~/.local/share/opencode/auth.json`:
 
 ```bash
+opencode auth login -p openai-compatible-cached
 opencode auth login -p anthropic-cached
 ```
-
-Only set `--opencode-anthropic-api-key-env` when you intentionally want the
-OpenCode provider to read its key from an environment variable instead of
-OpenCode auth storage.
 
 #### Qwen Code provider
 
@@ -188,12 +196,8 @@ upstream path.
 }
 ```
 
-Configure the two env vars in `proxy/.env`:
-
-```sh
-OPENAI_COMPATIBLE_API_KEY=sk-...
-OPENAI_COMPATIBLE_UPSTREAM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-```
+For OpenCode-managed traffic, do not configure provider credentials in
+`proxy/.env`; the production OpenCode path does not load that file.
 
 ### 4. Start the proxy
 
@@ -331,8 +335,6 @@ jq -c 'select(.status >= 400)' "$LOG"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENAI_COMPATIBLE_API_KEY` | — | Upstream API key (required) |
-| `OPENAI_COMPATIBLE_UPSTREAM_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Upstream base URL |
 | `BAILIAN_CACHE_PROXY_PORT` | `48761` | Local listen port |
 | `BAILIAN_CACHE_PROXY_MIN_TOKENS` | `1024` | Min prefix tokens before adding cache markers |
 | `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES` | `10485760` | Max request body size |
