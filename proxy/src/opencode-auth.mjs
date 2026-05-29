@@ -1,8 +1,10 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { emitKeypressEvents } from "node:readline"
 import { createInterface as createPromisesInterface } from "node:readline/promises"
+import { setTimeout as sleep } from "node:timers/promises"
 
 import { defaultOpenCodeConfigPath } from "./client-config.mjs"
 
@@ -20,13 +22,36 @@ const readJsonIfExists = async (filePath) => {
 
 const writeJsonAtomic0600 = async (filePath, value) => {
   await mkdir(dirname(filePath), { recursive: true })
-  const tempPath = join(dirname(filePath), `.tmp-${process.pid}-${Date.now()}.json`)
+  const tempPath = join(dirname(filePath), `.tmp-${process.pid}-${Date.now()}-${randomUUID()}.json`)
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, {
     encoding: "utf8",
     mode: 0o600,
   })
   await rename(tempPath, filePath)
-  await chmod(filePath, 0o600)
+  try {
+    await chmod(filePath, 0o600)
+  } catch (err) {
+    if (process.platform !== "win32") throw err
+  }
+}
+
+const acquireAuthLock = async (authPath, { timeoutMs = 5000 } = {}) => {
+  const lockPath = `${authPath}.lock`
+  const startedAt = Date.now()
+  while (true) {
+    try {
+      await mkdir(lockPath, { mode: 0o700 })
+      return async () => {
+        await rm(lockPath, { recursive: true, force: true })
+      }
+    } catch (err) {
+      if (err?.code !== "EEXIST") throw err
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error(`timed out waiting for ${lockPath}`)
+      }
+      await sleep(25)
+    }
+  }
 }
 
 const readAllInput = (input) => new Promise((resolve, reject) => {
@@ -78,12 +103,18 @@ export const writeOpenCodeCredential = async ({
   if (!normalizedProviderId) throw new Error("providerId is required")
   if (!normalizedApiKey) throw new Error("apiKey is required")
 
-  const auth = await readJsonIfExists(authPath)
-  auth[normalizedProviderId] = {
-    type: "api",
-    key: normalizedApiKey,
+  await mkdir(dirname(authPath), { recursive: true })
+  const release = await acquireAuthLock(authPath)
+  try {
+    const auth = await readJsonIfExists(authPath)
+    auth[normalizedProviderId] = {
+      type: "api",
+      key: normalizedApiKey,
+    }
+    await writeJsonAtomic0600(authPath, auth)
+  } finally {
+    await release()
   }
-  await writeJsonAtomic0600(authPath, auth)
   return { authPath, providerId: normalizedProviderId }
 }
 

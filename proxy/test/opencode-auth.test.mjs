@@ -70,6 +70,25 @@ describe("OpenCode auth bootstrap", () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  test("serializes concurrent credential writes without dropping entries", async () => {
+    const dir = await makeTempDir()
+    const authPath = join(dir, "auth.json")
+
+    await Promise.all(Array.from({ length: 12 }, (_, index) => writeOpenCodeCredential({
+      authPath,
+      providerId: `provider-${index}`,
+      apiKey: `sk-${index}`,
+    })))
+
+    const auth = await readJson(authPath)
+    assert.equal(Object.keys(auth).length, 12)
+    for (let index = 0; index < 12; index += 1) {
+      assert.deepEqual(auth[`provider-${index}`], { type: "api", key: `sk-${index}` })
+    }
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
   test("interactive CLI lets the user select a provider and enter a key", async () => {
     const dir = await makeTempDir()
     const configPath = join(dir, "opencode.json")
