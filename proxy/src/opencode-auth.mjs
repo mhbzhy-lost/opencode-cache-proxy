@@ -181,10 +181,12 @@ export const readApiKey = async ({
   return new Promise((resolve, reject) => {
     emitKeypressEvents(input)
     const wasRaw = input.isRaw
+    const wasPaused = input.isPaused?.() === true
     let value = ""
     const cleanup = () => {
       input.off("keypress", onKeypress)
       input.setRawMode(wasRaw)
+      if (wasPaused) input.pause?.()
       output.write("\n")
     }
     const onKeypress = (str, key = {}) => {
@@ -208,6 +210,7 @@ export const readApiKey = async ({
     output.write(prompt)
     input.setRawMode(true)
     input.on("keypress", onKeypress)
+    input.resume?.()
   })
 }
 
