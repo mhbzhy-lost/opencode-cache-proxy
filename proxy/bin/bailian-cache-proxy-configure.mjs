@@ -23,6 +23,9 @@ Options:
   --opencode-plugin-mode <mode>      plugin-list or symlink (default: plugin-list)
   --opencode-plugin-dir <path>       host-managed plugin dir for symlink mode
   --opencode-api-key-env <name>      OpenCode provider env var (default: OPENAI_COMPATIBLE_API_KEY)
+  --opencode-anthropic-api-key-env <name>
+                                      optional OpenCode Anthropic provider env var; omit to use opencode auth
+  --opencode-anthropic-models <csv>  OpenCode Anthropic model ids (default: claude-opus-4-6)
   --qwen-settings <path>             Qwen Code settings.json path
   --qwen-base-url <url>              Qwen local provider baseUrl
   --qwen-models <csv>                managed Qwen model ids
@@ -78,6 +81,10 @@ const main = async () => {
       repoRoot,
       port,
       apiKeyEnv: options["opencode-api-key-env"] || "OPENAI_COMPATIBLE_API_KEY",
+      anthropicApiKeyEnv: options["opencode-anthropic-api-key-env"] || undefined,
+      anthropicModelIds: options["opencode-anthropic-models"]
+        ? splitCsv(options["opencode-anthropic-models"])
+        : undefined,
       pluginMode: options["opencode-plugin-mode"] || "plugin-list",
       pluginDir: options["opencode-plugin-dir"] || null,
     }))

@@ -116,13 +116,36 @@ Add a custom provider in your `opencode.json` (usually at
         "qwen3.7-max":            { "name": "Qwen 3.7 Max" },
         "qwen3.7-max-nothink":    { "name": "Qwen 3.7 Max (no thinking)" }
       }
+    },
+    "anthropic-cached": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "Anthropic cached",
+      "options": {
+        "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1"
+      },
+      "models": {
+        "claude-opus-4-6": { "name": "Claude Opus 4.6" }
+      }
     }
   }
 }
 ```
 
-The `baseURL` points at the local proxy. Only `openai-compatible-cached` goes
-through the proxy; other OpenCode providers are unaffected.
+The `baseURL` values point at the local proxy. `openai-compatible-cached` uses
+the OpenAI-compatible chat-completions route; `anthropic-cached` uses the
+Anthropic Messages route via `@ai-sdk/anthropic`. Other OpenCode providers are
+unaffected.
+
+For `anthropic-cached`, use OpenCode's provider auth flow so the provider key is
+stored in `~/.local/share/opencode/auth.json`:
+
+```bash
+opencode auth login -p anthropic-cached
+```
+
+Only set `--opencode-anthropic-api-key-env` when you intentionally want the
+OpenCode provider to read its key from an environment variable instead of
+OpenCode auth storage.
 
 #### Qwen Code provider
 

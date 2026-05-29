@@ -13,7 +13,7 @@ node bin/bailian-cache-proxy-configure.mjs all
 ```
 
 This updates OpenCode and Qwen Code settings idempotently while preserving
-unrelated providers and hooks. The OpenCode provider it writes to
+unrelated providers and hooks. The OpenCode providers it writes to
 `opencode.json` (usually `~/.config/opencode/opencode.json`) looks like:
 
 ```json
@@ -26,9 +26,25 @@ unrelated providers and hooks. The OpenCode provider it writes to
         "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
         "apiKey": "{env:OPENAI_COMPATIBLE_API_KEY}"
       }
+    },
+    "anthropic-cached": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "Anthropic cached",
+      "options": {
+        "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1"
+      },
+      "models": {
+        "claude-opus-4-6": { "name": "Claude Opus 4.6" }
+      }
     }
   }
 }
+```
+
+Authenticate `anthropic-cached` with OpenCode auth storage:
+
+```bash
+opencode auth login -p anthropic-cached
 ```
 
 See the [root README](../README.md) for full setup instructions.
@@ -95,6 +111,11 @@ elapses.
   a stable opaque value per user or deployment, such as a UUID. Do not commit a
   real value or reuse the example placeholder. Change it only when you want to
   isolate or reset that cache namespace.
+- `OPENCODE_CACHE_PROXY_ANTHROPIC_API_KEY_ENV`: optional env var name written
+  into the OpenCode `anthropic-cached` provider. Leave unset to use OpenCode
+  auth storage via `opencode auth login -p anthropic-cached`.
+- `OPENCODE_CACHE_PROXY_ANTHROPIC_MODELS`: comma-separated model ids written
+  into the OpenCode `anthropic-cached` provider, default `claude-opus-4-6`.
 - `OPENCODE_BAILIAN_CACHE_PROXY=0`: disables plugin-managed proxy startup.
 - `QWEN_BAILIAN_CACHE_PROXY=0`: disables Qwen hook-managed proxy startup.
 

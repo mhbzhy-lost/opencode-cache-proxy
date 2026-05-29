@@ -4,9 +4,14 @@ import { dirname, join } from "node:path"
 
 const DEFAULT_PORT = 48761
 const OPENCODE_PROVIDER_ID = "openai-compatible-cached"
+const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-cached"
 const LEGACY_OPENCODE_PROVIDER_IDS = ["bailian-cache", "bailian-custom-cached"]
 const QWEN_HOOK_START_NAME = "bailian-cache-proxy-start"
 const QWEN_HOOK_STOP_NAME = "bailian-cache-proxy-stop"
+
+const ANTHROPIC_MODEL_NAMES = {
+  "claude-opus-4-6": "Claude Opus 4.6",
+}
 
 const QWEN_MODEL_NAMES = {
   "qwen3.6-plus": "Qwen 3.6 Plus (cached)",
@@ -94,11 +99,29 @@ export const buildOpenCodeProvider = ({ port = DEFAULT_PORT, apiKeyEnv = "OPENAI
   },
 })
 
+export const buildOpenCodeAnthropicProvider = ({
+  port = DEFAULT_PORT,
+  apiKeyEnv = null,
+  modelIds = ["claude-opus-4-6"],
+} = {}) => ({
+  npm: "@ai-sdk/anthropic",
+  name: "Anthropic cached",
+  options: {
+    baseURL: `http://127.0.0.1:${port}/apps/anthropic/v1`,
+    ...(apiKeyEnv ? { apiKey: `{env:${apiKeyEnv}}` } : {}),
+  },
+  models: Object.fromEntries(
+    modelIds.map((modelId) => [modelId, { name: ANTHROPIC_MODEL_NAMES[modelId] || modelId }]),
+  ),
+})
+
 export const configureOpenCodeCacheProxy = async ({
   configPath = defaultOpenCodeConfigPath(),
   repoRoot,
   port = DEFAULT_PORT,
   apiKeyEnv = "OPENAI_COMPATIBLE_API_KEY",
+  anthropicApiKeyEnv = null,
+  anthropicModelIds = ["claude-opus-4-6"],
   pluginMode = "plugin-list",
   pluginDir = null,
 } = {}) => {
@@ -126,6 +149,18 @@ export const configureOpenCodeCacheProxy = async ({
     messages.push(`[provider] ${OPENCODE_PROVIDER_ID} configured`)
   } else {
     messages.push(`[provider] ${OPENCODE_PROVIDER_ID} already up to date`)
+  }
+
+  const desiredAnthropicProvider = buildOpenCodeAnthropicProvider({
+    port,
+    apiKeyEnv: anthropicApiKeyEnv,
+    modelIds: anthropicModelIds,
+  })
+  if (!jsonEqual(providers[OPENCODE_ANTHROPIC_PROVIDER_ID], desiredAnthropicProvider)) {
+    providers[OPENCODE_ANTHROPIC_PROVIDER_ID] = desiredAnthropicProvider
+    messages.push(`[provider] ${OPENCODE_ANTHROPIC_PROVIDER_ID} configured`)
+  } else {
+    messages.push(`[provider] ${OPENCODE_ANTHROPIC_PROVIDER_ID} already up to date`)
   }
 
   const pluginSourceDir = join(repoRoot, "plugins")

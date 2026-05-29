@@ -47,6 +47,14 @@ describe("client cache proxy configuration", () => {
     )
     assert.equal(config.provider["openai-compatible-cached"].name, "OpenAI-compatible cached")
     assert.equal(config.provider["openai-compatible-cached"].options.apiKey, "{env:OPENAI_COMPATIBLE_API_KEY}")
+    assert.equal(config.provider["anthropic-cached"].npm, "@ai-sdk/anthropic")
+    assert.equal(config.provider["anthropic-cached"].name, "Anthropic cached")
+    assert.equal(
+      config.provider["anthropic-cached"].options.baseURL,
+      "http://127.0.0.1:49876/apps/anthropic/v1",
+    )
+    assert.equal(config.provider["anthropic-cached"].options.apiKey, undefined)
+    assert.deepEqual(Object.keys(config.provider["anthropic-cached"].models), ["claude-opus-4-6"])
     assert.deepEqual(Object.keys(config.provider["openai-compatible-cached"].models), [
       "qwen3.6-plus",
       "qwen3.6-plus-nothink",
@@ -57,6 +65,30 @@ describe("client cache proxy configuration", () => {
     ])
     assert.equal(config.provider["bailian-custom-cached"], undefined)
     assert.equal(config.provider.other.name, "Other provider")
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test("allows opting the OpenCode Anthropic provider into env auth and custom models", async () => {
+    const dir = await makeTempDir()
+    const configPath = join(dir, "opencode.json")
+
+    const result = await configureOpenCodeCacheProxy({
+      configPath,
+      repoRoot,
+      port: 49876,
+      anthropicApiKeyEnv: "CUSTOM_ANTHROPIC_KEY",
+      anthropicModelIds: ["claude-opus-4-6", "claude-sonnet-4-6"],
+    })
+
+    const config = await readJson(configPath)
+
+    assert.equal(result.changed, true)
+    assert.equal(config.provider["anthropic-cached"].options.apiKey, "{env:CUSTOM_ANTHROPIC_KEY}")
+    assert.deepEqual(Object.keys(config.provider["anthropic-cached"].models), [
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+    ])
 
     await rm(dir, { recursive: true, force: true })
   })
