@@ -88,6 +88,9 @@ elapses.
 OpenCode provider credentials and upstream routing are not read from
 `proxy/.env`. The production OpenCode path uses OpenCode auth storage for keys
 and provider `options.headers` for upstream/cache settings.
+The upstream URL control header is accepted only from loopback clients, so a
+proxy bound to a non-local interface cannot be used by remote clients as an
+arbitrary upstream forwarder.
 
 - `BAILIAN_CACHE_PROXY_PORT`: local proxy port, default `48761`.
 - `BAILIAN_CACHE_PROXY_MIN_TOKENS`: minimum estimated prefix tokens before

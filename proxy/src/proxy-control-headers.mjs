@@ -25,3 +25,14 @@ export const extractProxyControlHeaders = (headers = {}) => {
 
   return { control, headers: cleanHeaders }
 }
+
+export const isLoopbackRemoteAddress = (address) => {
+  const normalized = String(address || "").trim().toLowerCase()
+  if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true
+
+  const ipv4 = normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized
+  const parts = ipv4.split(".")
+  return parts.length === 4 &&
+    parts[0] === "127" &&
+    parts.every((part) => /^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255)
+}

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
+import { Readable } from "node:stream"
 import { describe, test } from "node:test"
 import { gzipSync } from "node:zlib"
 
@@ -20,6 +21,45 @@ const readJson = async (request) => {
   const chunks = []
   for await (const chunk of request) chunks.push(chunk)
   return JSON.parse(Buffer.concat(chunks).toString("utf8"))
+}
+
+const mockRequest = ({ method = "POST", url, headers = {}, body = "", remoteAddress = "127.0.0.1" }) => {
+  const request = Readable.from(body ? [Buffer.from(body)] : [])
+  request.method = method
+  request.url = url
+  request.headers = headers
+  request.socket = { remoteAddress }
+  return request
+}
+
+const mockResponse = () => {
+  const chunks = []
+  let resolve
+  const response = {
+    destroyed: false,
+    headersSent: false,
+    statusCode: null,
+    headers: null,
+    done: new Promise((done) => {
+      resolve = done
+    }),
+    writeHead(statusCode, headers = {}) {
+      this.statusCode = statusCode
+      this.headers = headers
+      this.headersSent = true
+      return this
+    },
+    end(chunk = "") {
+      if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)))
+      this.body = Buffer.concat(chunks).toString("utf8")
+      resolve(this)
+    },
+    destroy() {
+      this.destroyed = true
+      resolve(this)
+    },
+  }
+  return response
 }
 
 describe("createBailianCacheProxy", () => {
@@ -127,6 +167,36 @@ describe("createBailianCacheProxy", () => {
       await close(proxy.server)
       await close(upstream)
     }
+  })
+
+  test("rejects upstream control headers from non-loopback clients", async () => {
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: "http://127.0.0.1:1/compatible-mode/v1",
+      cacheOptions: { minCacheTokens: 16 },
+      lifecycle: false,
+      logger: { error: () => {} },
+    })
+
+    const request = mockRequest({
+      url: "/compatible-mode/v1/chat/completions",
+      remoteAddress: "203.0.113.10",
+      headers: {
+        authorization: "Bearer sk-client",
+        "content-type": "application/json",
+        "x-cache-proxy-upstream-base-url": "http://127.0.0.1:1/compatible-mode/v1",
+      },
+      body: JSON.stringify({
+        model: "qwen3.6-plus",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    })
+    const response = mockResponse()
+
+    proxy.server.emit("request", request, response)
+    await response.done
+
+    assert.equal(response.statusCode, 403)
+    assert.deepEqual(JSON.parse(response.body), { error: "forbidden_proxy_control_header" })
   })
 
   test("resolveDefaultApiKey reads OPENAI_COMPATIBLE_API_KEY", () => {

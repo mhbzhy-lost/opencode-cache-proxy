@@ -5,7 +5,7 @@ import { pipeline } from "node:stream/promises"
 import { planBailianCacheMarkersWithDiagnostics, truncateBodyForKeepalive } from "./cache-planner.mjs"
 import { createKeepaliveManager } from "./keepalive.mjs"
 import { createLifecycleTracker } from "./lifecycle.mjs"
-import { extractProxyControlHeaders } from "./proxy-control-headers.mjs"
+import { extractProxyControlHeaders, isLoopbackRemoteAddress } from "./proxy-control-headers.mjs"
 import { applyThinkModeRewrite } from "./think-mode-rewriter.mjs"
 import { ensureStreamUsageOption, extractUsage } from "./usage-extractor.mjs"
 import { buildUsageRecord, createUsageRecorder } from "./usage-recorder.mjs"
@@ -251,6 +251,13 @@ export const createBailianCacheProxy = ({
 
     try {
       const { control, headers: upstreamRequestHeaders } = extractProxyControlHeaders(request.headers)
+      // OpenCode generates these headers for localhost traffic. If the proxy is
+      // bound wider than loopback, do not let remote clients choose an upstream.
+      if (control.upstreamBaseUrl && !isLoopbackRemoteAddress(request.socket?.remoteAddress)) {
+        writeJson(response, 403, { error: "forbidden_proxy_control_header" })
+        recordOnce({ status: 403, proxy_error: "forbidden_proxy_control_header" })
+        return
+      }
       const requestUpstreamBaseUrl = control.upstreamBaseUrl || upstreamBaseUrl
       const requestCacheOptions = {
         ...cacheOptions,

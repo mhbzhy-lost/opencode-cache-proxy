@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
+import { Readable } from "node:stream"
 import { describe, test } from "node:test"
 
 import { createAnthropicHandler } from "../src/anthropic-handler.mjs"
@@ -27,6 +28,45 @@ const makeRequest = async (url, { method = "POST", headers = {}, body } = {}) =>
   const opts = { method, headers: { "content-type": "application/json", ...headers } }
   if (body !== undefined) opts.body = typeof body === "string" ? body : JSON.stringify(body)
   return fetch(url, opts)
+}
+
+const mockRequest = ({ method = "POST", url, headers = {}, body = "", remoteAddress = "127.0.0.1" }) => {
+  const request = Readable.from(body ? [Buffer.from(body)] : [])
+  request.method = method
+  request.url = url
+  request.headers = headers
+  request.socket = { remoteAddress }
+  return request
+}
+
+const mockResponse = () => {
+  const chunks = []
+  let resolve
+  const response = {
+    destroyed: false,
+    headersSent: false,
+    statusCode: null,
+    headers: null,
+    done: new Promise((done) => {
+      resolve = done
+    }),
+    writeHead(statusCode, headers = {}) {
+      this.statusCode = statusCode
+      this.headers = headers
+      this.headersSent = true
+      return this
+    },
+    end(chunk = "") {
+      if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)))
+      this.body = Buffer.concat(chunks).toString("utf8")
+      resolve(this)
+    },
+    destroy() {
+      this.destroyed = true
+      resolve(this)
+    },
+  }
+  return response
 }
 
 describe("createAnthropicHandler", () => {
@@ -164,6 +204,36 @@ describe("createAnthropicHandler", () => {
       await close(proxy)
       await close(upstream)
     }
+  })
+
+  test("rejects Anthropic upstream control headers from non-loopback clients", async () => {
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: "http://127.0.0.1:1",
+      cacheOptions: { cacheStrategy: "cache", minCacheTokens: 1 },
+      usageRecorder: { fireAndForget: () => {} },
+      logger: { error: () => {} },
+    })
+
+    const request = mockRequest({
+      url: "/apps/anthropic/v1/messages",
+      remoteAddress: "203.0.113.10",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": "sk-client",
+        "x-cache-proxy-upstream-base-url": "http://127.0.0.1:1",
+      },
+      body: JSON.stringify({
+        model: "claude-opus-4-6",
+        max_tokens: 10,
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      }),
+    })
+    const response = mockResponse()
+
+    await handler(request, response)
+
+    assert.equal(response.statusCode, 403)
+    assert.deepEqual(JSON.parse(response.body), { error: "forbidden_proxy_control_header" })
   })
 
   test("forwards request with cache markers added, returns upstream response, records usage with protocol anthropic", async () => {

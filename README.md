@@ -68,6 +68,9 @@ OpenCode stores provider keys in `~/.local/share/opencode/auth.json`. The
 OpenCode provider config carries proxy-only upstream/cache settings in
 `options.headers`; the proxy strips those `x-cache-proxy-*` headers before
 forwarding requests upstream.
+The dynamic upstream override header is honored only for loopback clients; if
+the proxy is bound to a non-local interface, remote clients cannot choose an
+arbitrary upstream URL.
 
 ### 3. Configure a client
 

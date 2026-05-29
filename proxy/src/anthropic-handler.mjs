@@ -7,7 +7,7 @@ import {
   truncateAnthropicBodyForKeepalive,
 } from "./anthropic-cache-planner.mjs"
 import { extractAnthropicUsage } from "./anthropic-usage-extractor.mjs"
-import { extractProxyControlHeaders } from "./proxy-control-headers.mjs"
+import { extractProxyControlHeaders, isLoopbackRemoteAddress } from "./proxy-control-headers.mjs"
 
 const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024
 const DEFAULT_USAGE_SNIFF_BYTES = 64 * 1024
@@ -174,6 +174,13 @@ export const createAnthropicHandler = ({
 
     try {
       const { control, headers: upstreamRequestHeaders } = extractProxyControlHeaders(request.headers)
+      // OpenCode generates these headers for localhost traffic. If the proxy is
+      // bound wider than loopback, do not let remote clients choose an upstream.
+      if (control.upstreamBaseUrl && !isLoopbackRemoteAddress(request.socket?.remoteAddress)) {
+        writeJson(response, 403, { error: "forbidden_proxy_control_header" })
+        recordOnce({ status: 403, proxy_error: "forbidden_proxy_control_header" })
+        return
+      }
       const requestUpstreamBaseUrl = control.upstreamBaseUrl || upstreamBaseUrl
       const requestCacheOptions = {
         ...cacheOptions,
