@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, test } from "node:test"
 
-import { extractProxyControlHeaders } from "../src/proxy-control-headers.mjs"
+import { extractProxyControlHeaders, isLoopbackRemoteAddress } from "../src/proxy-control-headers.mjs"
 
 describe("extractProxyControlHeaders", () => {
   test("extracts known control headers and strips proxy-only headers", () => {
@@ -42,5 +42,14 @@ describe("extractProxyControlHeaders", () => {
 
   test("treats null headers as empty", () => {
     assert.deepEqual(extractProxyControlHeaders(null), { control: {}, headers: {} })
+  })
+
+  test("recognizes loopback remote address variants", () => {
+    assert.equal(isLoopbackRemoteAddress("127.0.0.1"), true)
+    assert.equal(isLoopbackRemoteAddress("127.0.0.1:48761"), true)
+    assert.equal(isLoopbackRemoteAddress("::ffff:127.0.0.1"), true)
+    assert.equal(isLoopbackRemoteAddress("::1"), true)
+    assert.equal(isLoopbackRemoteAddress("[::1]:48761"), true)
+    assert.equal(isLoopbackRemoteAddress("203.0.113.10"), false)
   })
 })

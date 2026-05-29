@@ -1,3 +1,5 @@
+import { isIP } from "node:net"
+
 const CONTROL_PREFIX = "x-cache-proxy-"
 
 const CONTROL_KEYS = new Map([
@@ -26,13 +28,22 @@ export const extractProxyControlHeaders = (headers = {}) => {
   return { control, headers: cleanHeaders }
 }
 
-export const isLoopbackRemoteAddress = (address) => {
+const stripRemoteAddressPort = (address) => {
   const normalized = String(address || "").trim().toLowerCase()
+  if (normalized.startsWith("[")) {
+    const end = normalized.indexOf("]")
+    if (end > 0) return normalized.slice(1, end)
+  }
+  if (/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(normalized)) {
+    return normalized.replace(/:\d+$/, "")
+  }
+  return normalized
+}
+
+export const isLoopbackRemoteAddress = (address) => {
+  const normalized = stripRemoteAddressPort(address)
   if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true
 
   const ipv4 = normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized
-  const parts = ipv4.split(".")
-  return parts.length === 4 &&
-    parts[0] === "127" &&
-    parts.every((part) => /^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255)
+  return isIP(ipv4) === 4 && ipv4.startsWith("127.")
 }
