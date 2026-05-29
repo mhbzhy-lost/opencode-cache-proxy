@@ -3,14 +3,16 @@ import { mkdir, readFile, readdir, rename, rm, symlink, writeFile, lstat, readli
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
+import { DEFAULT_CLAUDE_COMPAT_USER_AGENT } from "./anthropic-env.mjs"
+
 const DEFAULT_PORT = 48761
 const DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-const DEFAULT_ANTHROPIC_UPSTREAM_BASE_URL = "https://api.anthropic.com"
+const DEFAULT_ANTHROPIC_IDEALAB_UPSTREAM_BASE_URL = "https://idealab.alibaba-inc.com/api/anthropic"
 const DEFAULT_MARKER_STRATEGY = "turn-stable"
 const DEFAULT_ANTHROPIC_CACHE_STRATEGY = "cache"
 const OPENCODE_PROVIDER_ID = "openai-compatible-cached"
-const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-cached"
-const LEGACY_OPENCODE_PROVIDER_IDS = ["bailian-cache", "bailian-custom-cached"]
+const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-idealab-cached"
+const LEGACY_OPENCODE_PROVIDER_IDS = ["bailian-cache", "bailian-custom-cached", "anthropic-cached"]
 const QWEN_HOOK_START_NAME = "bailian-cache-proxy-start"
 const QWEN_HOOK_STOP_NAME = "bailian-cache-proxy-stop"
 
@@ -114,25 +116,21 @@ export const buildOpenCodeProvider = ({
 export const buildOpenCodeAnthropicProvider = ({
   port = DEFAULT_PORT,
   existing = null,
-  upstreamBaseUrl = DEFAULT_ANTHROPIC_UPSTREAM_BASE_URL,
-  cacheStrategy = DEFAULT_ANTHROPIC_CACHE_STRATEGY,
-  metadataUserId = null,
-  modelIds = ["claude-opus-4-6"],
 } = {}) => ({
   npm: "@ai-sdk/anthropic",
-  name: "Anthropic cached",
+  name: "Anthropic Idealab cached",
   options: {
     baseURL: `http://127.0.0.1:${port}/apps/anthropic/v1`,
     headers: {
-      "x-cache-proxy-upstream-base-url": upstreamBaseUrl,
-      "x-cache-proxy-cache-strategy": cacheStrategy,
-      "x-cache-proxy-metadata-user-id": metadataUserId ||
-        existing?.options?.headers?.["x-cache-proxy-metadata-user-id"] ||
+      "x-cache-proxy-upstream-base-url": DEFAULT_ANTHROPIC_IDEALAB_UPSTREAM_BASE_URL,
+      "x-cache-proxy-cache-strategy": DEFAULT_ANTHROPIC_CACHE_STRATEGY,
+      "x-cache-proxy-upstream-user-agent": DEFAULT_CLAUDE_COMPAT_USER_AGENT,
+      "x-cache-proxy-metadata-user-id": existing?.options?.headers?.["x-cache-proxy-metadata-user-id"] ||
         randomUUID(),
     },
   },
   models: Object.fromEntries(
-    modelIds.map((modelId) => [modelId, { name: ANTHROPIC_MODEL_NAMES[modelId] || modelId }]),
+    ["claude-opus-4-6"].map((modelId) => [modelId, { name: ANTHROPIC_MODEL_NAMES[modelId] || modelId }]),
   ),
 })
 
@@ -142,10 +140,6 @@ export const configureOpenCodeCacheProxy = async ({
   port = DEFAULT_PORT,
   openaiUpstreamBaseUrl = DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL,
   markerStrategy = DEFAULT_MARKER_STRATEGY,
-  anthropicUpstreamBaseUrl = DEFAULT_ANTHROPIC_UPSTREAM_BASE_URL,
-  anthropicCacheStrategy = DEFAULT_ANTHROPIC_CACHE_STRATEGY,
-  anthropicMetadataUserId = null,
-  anthropicModelIds = ["claude-opus-4-6"],
   pluginMode = "plugin-list",
   pluginDir = null,
 } = {}) => {
@@ -160,6 +154,7 @@ export const configureOpenCodeCacheProxy = async ({
     ? config.provider
     : {}
   if (config.provider !== providers) config.provider = providers
+  const existingAnthropicProvider = providers[OPENCODE_ANTHROPIC_PROVIDER_ID] || providers["anthropic-cached"]
   for (const legacyProviderId of LEGACY_OPENCODE_PROVIDER_IDS) {
     if (providers[legacyProviderId]) {
       delete providers[legacyProviderId]
@@ -181,11 +176,7 @@ export const configureOpenCodeCacheProxy = async ({
 
   const desiredAnthropicProvider = buildOpenCodeAnthropicProvider({
     port,
-    existing: providers[OPENCODE_ANTHROPIC_PROVIDER_ID],
-    upstreamBaseUrl: anthropicUpstreamBaseUrl,
-    cacheStrategy: anthropicCacheStrategy,
-    metadataUserId: anthropicMetadataUserId,
-    modelIds: anthropicModelIds,
+    existing: existingAnthropicProvider,
   })
   if (!jsonEqual(providers[OPENCODE_ANTHROPIC_PROVIDER_ID], desiredAnthropicProvider)) {
     providers[OPENCODE_ANTHROPIC_PROVIDER_ID] = desiredAnthropicProvider

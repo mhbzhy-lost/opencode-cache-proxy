@@ -128,14 +128,15 @@ Add a custom provider in your `opencode.json` (usually at
         "qwen3.7-max-nothink":    { "name": "Qwen 3.7 Max (no thinking)" }
       }
     },
-    "anthropic-cached": {
+    "anthropic-idealab-cached": {
       "npm": "@ai-sdk/anthropic",
-      "name": "Anthropic cached",
+      "name": "Anthropic Idealab cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1",
         "headers": {
-          "x-cache-proxy-upstream-base-url": "https://api.anthropic.com",
+          "x-cache-proxy-upstream-base-url": "https://idealab.alibaba-inc.com/api/anthropic",
           "x-cache-proxy-cache-strategy": "cache",
+          "x-cache-proxy-upstream-user-agent": "claude-cli/2.1.156 (external, sdk-cli)",
           "x-cache-proxy-metadata-user-id": "<stable-generated-id>"
         }
       },
@@ -148,9 +149,11 @@ Add a custom provider in your `opencode.json` (usually at
 ```
 
 The `baseURL` values point at the local proxy. `openai-compatible-cached` uses
-the OpenAI-compatible chat-completions route; `anthropic-cached` uses the
-Anthropic Messages route via `@ai-sdk/anthropic`. Other OpenCode providers are
-unaffected.
+the OpenAI-compatible chat-completions route; `anthropic-idealab-cached` uses
+the Anthropic Messages route via `@ai-sdk/anthropic` and carries the Idealab
+upstream plus Claude-compatible upstream user-agent in provider headers. Add
+another platform-specific Anthropic provider when another upstream is needed.
+Other OpenCode providers are unaffected.
 
 Use the bundled auth bootstrap so provider keys are stored in
 `~/.local/share/opencode/auth.json`:

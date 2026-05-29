@@ -121,8 +121,6 @@ export const createAnthropicHandler = ({
   usageSniffBytes = DEFAULT_USAGE_SNIFF_BYTES,
   usageRecorder = { fireAndForget: () => {} },
   keepaliveManager = null,
-  upstreamUserAgent = "",
-  metadataUserId = "",
   logger = console,
   now = () => Date.now(),
 } = {}) => {
@@ -186,8 +184,8 @@ export const createAnthropicHandler = ({
         ...cacheOptions,
         ...(control.cacheStrategy ? { cacheStrategy: control.cacheStrategy } : {}),
       }
-      const requestMetadataUserId = control.metadataUserId || metadataUserId
-      const requestUpstreamUserAgent = control.upstreamUserAgent || upstreamUserAgent
+      const requestMetadataUserId = control.metadataUserId || ""
+      const requestUpstreamUserAgent = control.upstreamUserAgent || ""
 
       let bodyBuffer = await readBody(request, maxBodyBytes)
       let body = JSON.parse(bodyBuffer.toString("utf8"))

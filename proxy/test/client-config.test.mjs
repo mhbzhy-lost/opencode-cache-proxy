@@ -55,26 +55,30 @@ describe("client cache proxy configuration", () => {
       config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-marker-strategy"],
       "turn-stable",
     )
-    assert.equal(config.provider["anthropic-cached"].npm, "@ai-sdk/anthropic")
-    assert.equal(config.provider["anthropic-cached"].name, "Anthropic cached")
+    assert.equal(config.provider["anthropic-idealab-cached"].npm, "@ai-sdk/anthropic")
+    assert.equal(config.provider["anthropic-idealab-cached"].name, "Anthropic Idealab cached")
     assert.equal(
-      config.provider["anthropic-cached"].options.baseURL,
+      config.provider["anthropic-idealab-cached"].options.baseURL,
       "http://127.0.0.1:49876/apps/anthropic/v1",
     )
-    assert.equal(config.provider["anthropic-cached"].options.apiKey, undefined)
+    assert.equal(config.provider["anthropic-idealab-cached"].options.apiKey, undefined)
     assert.equal(
-      config.provider["anthropic-cached"].options.headers["x-cache-proxy-upstream-base-url"],
-      "https://api.anthropic.com",
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://idealab.alibaba-inc.com/api/anthropic",
     )
     assert.equal(
-      config.provider["anthropic-cached"].options.headers["x-cache-proxy-cache-strategy"],
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-cache-strategy"],
       "cache",
     )
+    assert.equal(
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-user-agent"],
+      "claude-cli/2.1.156 (external, sdk-cli)",
+    )
     assert.match(
-      config.provider["anthropic-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     )
-    assert.deepEqual(Object.keys(config.provider["anthropic-cached"].models), ["claude-opus-4-6"])
+    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), ["claude-opus-4-6"])
     assert.deepEqual(Object.keys(config.provider["openai-compatible-cached"].models), [
       "qwen3.6-plus",
       "qwen3.6-plus-nothink",
@@ -89,7 +93,7 @@ describe("client cache proxy configuration", () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  test("allows customizing OpenCode provider upstream headers and models", async () => {
+  test("allows customizing OpenAI-compatible provider while keeping Anthropic Idealab fixed", async () => {
     const dir = await makeTempDir()
     const configPath = join(dir, "opencode.json")
 
@@ -117,21 +121,22 @@ describe("client cache proxy configuration", () => {
       "fraction",
     )
     assert.equal(
-      config.provider["anthropic-cached"].options.headers["x-cache-proxy-upstream-base-url"],
-      "https://anthropic.example",
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://idealab.alibaba-inc.com/api/anthropic",
     )
     assert.equal(
-      config.provider["anthropic-cached"].options.headers["x-cache-proxy-cache-strategy"],
-      "bypass",
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-cache-strategy"],
+      "cache",
     )
     assert.equal(
-      config.provider["anthropic-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-user-agent"],
+      "claude-cli/2.1.156 (external, sdk-cli)",
+    )
+    assert.notEqual(
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
       "stable-user",
     )
-    assert.deepEqual(Object.keys(config.provider["anthropic-cached"].models), [
-      "claude-opus-4-6",
-      "claude-sonnet-4-6",
-    ])
+    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), ["claude-opus-4-6"])
 
     await rm(dir, { recursive: true, force: true })
   })
@@ -161,8 +166,9 @@ describe("client cache proxy configuration", () => {
     await configureOpenCodeCacheProxy({ configPath, repoRoot })
 
     const config = await readJson(configPath)
+    assert.equal(config.provider["anthropic-cached"], undefined)
     assert.equal(
-      config.provider["anthropic-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
       "existing-stable-user",
     )
 

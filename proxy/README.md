@@ -30,14 +30,15 @@ unrelated providers and hooks. The OpenCode providers it writes to
         }
       }
     },
-    "anthropic-cached": {
+    "anthropic-idealab-cached": {
       "npm": "@ai-sdk/anthropic",
-      "name": "Anthropic cached",
+      "name": "Anthropic Idealab cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/apps/anthropic/v1",
         "headers": {
-          "x-cache-proxy-upstream-base-url": "https://api.anthropic.com",
+          "x-cache-proxy-upstream-base-url": "https://idealab.alibaba-inc.com/api/anthropic",
           "x-cache-proxy-cache-strategy": "cache",
+          "x-cache-proxy-upstream-user-agent": "claude-cli/2.1.156 (external, sdk-cli)",
           "x-cache-proxy-metadata-user-id": "<stable-generated-id>"
         }
       },

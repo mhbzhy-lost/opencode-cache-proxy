@@ -1,54 +1,18 @@
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import { describe, test } from "node:test"
+import { fileURLToPath } from "node:url"
 
-import {
-  DEFAULT_CLAUDE_COMPAT_USER_AGENT,
-  resolveAnthropicMetadataUserId,
-  resolveAnthropicUpstreamUserAgent,
-} from "../src/anthropic-env.mjs"
+import { DEFAULT_CLAUDE_COMPAT_USER_AGENT } from "../src/anthropic-env.mjs"
 
-describe("resolveAnthropicUpstreamUserAgent", () => {
-  test("does not attach a Claude-compatible identity by default", () => {
-    assert.equal(resolveAnthropicUpstreamUserAgent({}), "")
-    assert.equal(
-      resolveAnthropicUpstreamUserAgent({
-        ANTHROPIC_CACHE_PROXY_USER_AGENT: "claude-cli/custom",
-      }),
-      "",
-    )
-  })
+const here = dirname(fileURLToPath(import.meta.url))
 
-  test("uses the default Claude-compatible user-agent only when enabled", () => {
-    assert.equal(
-      resolveAnthropicUpstreamUserAgent({
-        ANTHROPIC_CACHE_PROXY_CLAUDE_COMPAT: "1",
-      }),
-      DEFAULT_CLAUDE_COMPAT_USER_AGENT,
-    )
-  })
+describe("Anthropic provider identity constants", () => {
+  test("keeps a fixed Claude-compatible user-agent without env switches", async () => {
+    assert.equal(DEFAULT_CLAUDE_COMPAT_USER_AGENT, "claude-cli/2.1.156 (external, sdk-cli)")
 
-  test("allows customizing the Claude-compatible user-agent", () => {
-    assert.equal(
-      resolveAnthropicUpstreamUserAgent({
-        ANTHROPIC_CACHE_PROXY_CLAUDE_COMPAT: "true",
-        ANTHROPIC_CACHE_PROXY_USER_AGENT: "claude-cli/test (external, sdk-cli)",
-      }),
-      "claude-cli/test (external, sdk-cli)",
-    )
-  })
-})
-
-describe("resolveAnthropicMetadataUserId", () => {
-  test("does not inject metadata.user_id by default", () => {
-    assert.equal(resolveAnthropicMetadataUserId({}), "")
-  })
-
-  test("returns a trimmed metadata.user_id override when configured", () => {
-    assert.equal(
-      resolveAnthropicMetadataUserId({
-        ANTHROPIC_CACHE_PROXY_METADATA_USER_ID: "  opencode-cache-user  ",
-      }),
-      "opencode-cache-user",
-    )
+    const source = await readFile(join(here, "..", "src", "anthropic-env.mjs"), "utf8")
+    assert.doesNotMatch(source, /process\.env|ANTHROPIC_CACHE_PROXY|resolveAnthropic/)
   })
 })

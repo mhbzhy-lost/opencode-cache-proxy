@@ -55,14 +55,14 @@ describe("OpenCode auth bootstrap", () => {
     await writeFile(configPath, JSON.stringify({
       provider: {
         "openai-compatible-cached": { name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
-        "anthropic-cached": { name: "Anthropic cached", npm: "@ai-sdk/anthropic" },
+        "anthropic-idealab-cached": { name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
       },
     }))
 
     const choices = await listOpenCodeProviderChoices({ configPath })
 
     assert.deepEqual(choices, [
-      { id: "anthropic-cached", name: "Anthropic cached", npm: "@ai-sdk/anthropic" },
+      { id: "anthropic-idealab-cached", name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
       { id: "openai-compatible-cached", name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
     ])
 
@@ -79,16 +79,16 @@ describe("OpenCode auth bootstrap", () => {
 
     const result = await writeOpenCodeCredential({
       authPath,
-      providerId: "anthropic-cached",
+      providerId: "anthropic-idealab-cached",
       apiKey: "sk-anthropic",
     })
 
     const auth = await readJson(authPath)
     const mode = (await stat(authPath)).mode & 0o777
-    assert.equal(result.providerId, "anthropic-cached")
+    assert.equal(result.providerId, "anthropic-idealab-cached")
     assert.deepEqual(auth, {
       deepseek: { type: "api", key: "sk-deepseek" },
-      "anthropic-cached": { type: "api", key: "sk-anthropic" },
+      "anthropic-idealab-cached": { type: "api", key: "sk-anthropic" },
     })
     assert.equal(mode, 0o600)
 
@@ -119,7 +119,7 @@ describe("OpenCode auth bootstrap", () => {
     let stdout = ""
     const output = { write: (chunk) => { stdout += chunk } }
 
-    const apiKeyPromise = readApiKey({ providerId: "anthropic-cached", input, output })
+    const apiKeyPromise = readApiKey({ providerId: "anthropic-idealab-cached", input, output })
 
     assert.equal(input.resumeCalls, 1)
     input.emit("keypress", "s", {})
@@ -130,7 +130,7 @@ describe("OpenCode auth bootstrap", () => {
 
     assert.equal(await apiKeyPromise, "sk-test")
     assert.deepEqual(input.rawModes, [true, false])
-    assert.match(stdout, /API key for anthropic-cached:/)
+    assert.match(stdout, /API key for anthropic-idealab-cached:/)
     assert.doesNotMatch(stdout, /sk-test/)
   })
 
@@ -141,7 +141,7 @@ describe("OpenCode auth bootstrap", () => {
     const output = { write: () => {} }
 
     const apiKeyPromise = readApiKey({
-      providerId: "anthropic-cached",
+      providerId: "anthropic-idealab-cached",
       input,
       output,
       signalTarget,
@@ -162,7 +162,7 @@ describe("OpenCode auth bootstrap", () => {
     await writeFile(configPath, JSON.stringify({
       provider: {
         "openai-compatible-cached": { name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
-        "anthropic-cached": { name: "Anthropic cached", npm: "@ai-sdk/anthropic" },
+        "anthropic-idealab-cached": { name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
       },
     }))
 
@@ -175,10 +175,10 @@ describe("OpenCode auth bootstrap", () => {
     ], { input: "1\nsk-interactive\n" })
 
     assert.equal(result.status, 0, result.stderr)
-    assert.match(result.stdout, /1\. anthropic-cached/)
-    assert.match(result.stdout, /credential stored for anthropic-cached/)
+    assert.match(result.stdout, /1\. anthropic-idealab-cached/)
+    assert.match(result.stdout, /credential stored for anthropic-idealab-cached/)
     const auth = await readJson(authPath)
-    assert.equal(auth["anthropic-cached"].key, "sk-interactive")
+    assert.equal(auth["anthropic-idealab-cached"].key, "sk-interactive")
 
     await rm(dir, { recursive: true, force: true })
   })

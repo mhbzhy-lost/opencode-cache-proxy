@@ -25,13 +25,6 @@ Options:
   --opencode-openai-upstream-base-url <url>
                                       OpenCode proxy upstream header for OpenAI-compatible route
   --opencode-marker-strategy <name>  OpenCode proxy cache marker strategy header
-  --opencode-anthropic-upstream-base-url <url>
-                                      OpenCode proxy upstream header for Anthropic route
-  --opencode-anthropic-cache-strategy <name>
-                                      OpenCode proxy Anthropic cache strategy header
-  --opencode-anthropic-metadata-user-id <id>
-                                      OpenCode proxy stable Anthropic metadata.user_id header
-  --opencode-anthropic-models <csv>  OpenCode Anthropic model ids (default: claude-opus-4-6)
   --qwen-settings <path>             Qwen Code settings.json path
   --qwen-base-url <url>              Qwen local provider baseUrl
   --qwen-models <csv>                managed Qwen model ids
@@ -64,6 +57,19 @@ const parseArgs = (argv) => {
   return { client, options }
 }
 
+const rejectRemovedAnthropicOptions = (options) => {
+  for (const name of [
+    "opencode-anthropic-upstream-base-url",
+    "opencode-anthropic-cache-strategy",
+    "opencode-anthropic-metadata-user-id",
+    "opencode-anthropic-models",
+  ]) {
+    if (Object.hasOwn(options, name)) {
+      throw new Error(`--${name} is no longer supported; use a platform-specific Anthropic provider instead`)
+    }
+  }
+}
+
 const main = async () => {
   const parsed = parseArgs(process.argv.slice(2))
   if (parsed.help) {
@@ -75,6 +81,7 @@ const main = async () => {
   if (!["all", "opencode", "qwen"].includes(client)) {
     throw new Error(`unknown client: ${client}`)
   }
+  rejectRemovedAnthropicOptions(options)
 
   const repoRoot = resolve(options["repo-root"] || defaultRepoRoot)
   const port = options.port ? Number(options.port) : 48761
@@ -88,12 +95,6 @@ const main = async () => {
       port,
       openaiUpstreamBaseUrl: options["opencode-openai-upstream-base-url"] || undefined,
       markerStrategy: options["opencode-marker-strategy"] || undefined,
-      anthropicUpstreamBaseUrl: options["opencode-anthropic-upstream-base-url"] || undefined,
-      anthropicCacheStrategy: options["opencode-anthropic-cache-strategy"] || undefined,
-      anthropicMetadataUserId: options["opencode-anthropic-metadata-user-id"] || undefined,
-      anthropicModelIds: options["opencode-anthropic-models"]
-        ? splitCsv(options["opencode-anthropic-models"])
-        : undefined,
       pluginMode: options["opencode-plugin-mode"] || "plugin-list",
       pluginDir: options["opencode-plugin-dir"] || null,
     }))

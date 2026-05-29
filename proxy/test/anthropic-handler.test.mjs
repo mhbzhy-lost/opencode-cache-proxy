@@ -70,6 +70,16 @@ const mockResponse = () => {
 }
 
 describe("createAnthropicHandler", () => {
+  test("does not expose constructor-level Anthropic identity switches", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const { fileURLToPath } = await import("node:url")
+    const { dirname, join } = await import("node:path")
+    const here = dirname(fileURLToPath(import.meta.url))
+    const source = await readFile(join(here, "..", "src", "anthropic-handler.mjs"), "utf8")
+
+    assert.doesNotMatch(source, /upstreamUserAgent\s*=\s*""|metadataUserId\s*=\s*""/)
+  })
+
   test("bypass strategy forwards the original request body without mutation while recording usage", async () => {
     let receivedRawBody
     const upstream = createServer(async (request, response) => {
@@ -96,7 +106,6 @@ describe("createAnthropicHandler", () => {
       upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
       apiKey: "sk-test",
       cacheOptions: { cacheStrategy: "bypass", minCacheTokens: 1 },
-      metadataUserId: "proxy-user",
       usageRecorder: { fireAndForget: (entry) => records.push(entry) },
       logger: { error: () => {} },
     })
@@ -165,7 +174,6 @@ describe("createAnthropicHandler", () => {
     const handler = createAnthropicHandler({
       upstreamBaseUrl: "http://127.0.0.1:9",
       cacheOptions: { cacheStrategy: "cache", minCacheTokens: 1 },
-      metadataUserId: "constructor-user",
       usageRecorder: { fireAndForget: () => {} },
       logger: { error: () => {} },
     })
@@ -324,7 +332,7 @@ describe("createAnthropicHandler", () => {
     }
   })
 
-  test("fills missing metadata.user_id in cache mode when configured", async () => {
+  test("fills missing metadata.user_id from provider control header in cache mode", async () => {
     let receivedBody
     const upstream = createServer(async (request, response) => {
       receivedBody = await readJson(request)
@@ -344,7 +352,6 @@ describe("createAnthropicHandler", () => {
       upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
       apiKey: "sk-test",
       cacheOptions: { minCacheTokens: 1 },
-      metadataUserId: "opencode-cache-user",
       usageRecorder: { fireAndForget: () => {} },
       logger: { error: () => {} },
     })
@@ -356,6 +363,9 @@ describe("createAnthropicHandler", () => {
       const response = await makeRequest(
         `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
         {
+          headers: {
+            "x-cache-proxy-metadata-user-id": "opencode-cache-user",
+          },
           body: {
             model: "claude-opus-4-6",
             max_tokens: 10,
@@ -396,7 +406,6 @@ describe("createAnthropicHandler", () => {
       upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
       apiKey: "sk-test",
       cacheOptions: { minCacheTokens: 1 },
-      metadataUserId: "proxy-user",
       usageRecorder: { fireAndForget: () => {} },
       logger: { error: () => {} },
     })
@@ -408,6 +417,9 @@ describe("createAnthropicHandler", () => {
       const response = await makeRequest(
         `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
         {
+          headers: {
+            "x-cache-proxy-metadata-user-id": "proxy-user",
+          },
           body: {
             model: "claude-opus-4-6",
             max_tokens: 10,
@@ -475,7 +487,7 @@ describe("createAnthropicHandler", () => {
     }
   })
 
-  test("overrides upstream user-agent when configured", async () => {
+  test("overrides upstream user-agent from provider control header", async () => {
     let receivedHeaders
     const upstream = createServer(async (request, response) => {
       receivedHeaders = request.headers
@@ -496,7 +508,6 @@ describe("createAnthropicHandler", () => {
       upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
       apiKey: "sk-test",
       cacheOptions: { cacheStrategy: "bypass" },
-      upstreamUserAgent: "claude-cli/test (external, sdk-cli)",
       usageRecorder: { fireAndForget: () => {} },
       logger: { error: () => {} },
     })
@@ -511,6 +522,7 @@ describe("createAnthropicHandler", () => {
           headers: {
             "x-api-key": "sk-user",
             "user-agent": "opencode/1.15.10",
+            "x-cache-proxy-upstream-user-agent": "claude-cli/test (external, sdk-cli)",
           },
           body: {
             model: "claude-opus-4-6",
