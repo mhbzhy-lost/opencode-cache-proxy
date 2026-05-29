@@ -3,15 +3,40 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawn } from "node:child_process"
+import { EventEmitter } from "node:events"
 import { describe, test } from "node:test"
 
 import {
   listOpenCodeProviderChoices,
+  readApiKey,
   writeOpenCodeCredential,
 } from "../src/opencode-auth.mjs"
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "opencode-auth-"))
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"))
+
+const makeTtyInput = () => {
+  const input = new EventEmitter()
+  input.isTTY = true
+  input.isRaw = false
+  input.rawModes = []
+  input.resumeCalls = 0
+  input.pauseCalls = 0
+  input.setRawMode = (value) => {
+    input.isRaw = value
+    input.rawModes.push(value)
+    return input
+  }
+  input.resume = () => {
+    input.resumeCalls += 1
+    return input
+  }
+  input.pause = () => {
+    input.pauseCalls += 1
+    return input
+  }
+  return input
+}
 
 const runNode = (args, { input = "" } = {}) => new Promise((resolve) => {
   const child = spawn(process.execPath, args, { stdio: ["pipe", "pipe", "pipe"] })
@@ -87,6 +112,47 @@ describe("OpenCode auth bootstrap", () => {
     }
 
     await rm(dir, { recursive: true, force: true })
+  })
+
+  test("TTY API key input resumes stdin and does not echo typed characters", async () => {
+    const input = makeTtyInput()
+    let stdout = ""
+    const output = { write: (chunk) => { stdout += chunk } }
+
+    const apiKeyPromise = readApiKey({ providerId: "anthropic-cached", input, output })
+
+    assert.equal(input.resumeCalls, 1)
+    input.emit("keypress", "s", {})
+    input.emit("keypress", "k", {})
+    input.emit("keypress", "-", {})
+    input.emit("keypress", "test", {})
+    input.emit("keypress", "\r", { name: "return" })
+
+    assert.equal(await apiKeyPromise, "sk-test")
+    assert.deepEqual(input.rawModes, [true, false])
+    assert.match(stdout, /API key for anthropic-cached:/)
+    assert.doesNotMatch(stdout, /sk-test/)
+  })
+
+  test("TTY API key input restores terminal state on SIGINT", async () => {
+    const input = makeTtyInput()
+    const signalTarget = new EventEmitter()
+    input.isPaused = () => true
+    const output = { write: () => {} }
+
+    const apiKeyPromise = readApiKey({
+      providerId: "anthropic-cached",
+      input,
+      output,
+      signalTarget,
+    })
+
+    signalTarget.emit("SIGINT")
+
+    await assert.rejects(apiKeyPromise, /cancelled/)
+    assert.deepEqual(input.rawModes, [true, false])
+    assert.equal(input.pauseCalls, 1)
+    assert.equal(signalTarget.listenerCount("SIGINT"), 0)
   })
 
   test("interactive CLI lets the user select a provider and enter a key", async () => {

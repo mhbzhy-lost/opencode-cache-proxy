@@ -165,6 +165,7 @@ export const readApiKey = async ({
   input = process.stdin,
   output = process.stdout,
   question,
+  signalTarget = process,
 } = {}) => {
   const prompt = `API key for ${providerId}: `
   if (question) return (await question(prompt)).trim()
@@ -181,11 +182,25 @@ export const readApiKey = async ({
   return new Promise((resolve, reject) => {
     emitKeypressEvents(input)
     const wasRaw = input.isRaw
+    const wasPaused = input.isPaused?.() === true
     let value = ""
+    let cleaned = false
     const cleanup = () => {
+      if (cleaned) return
+      cleaned = true
       input.off("keypress", onKeypress)
+      signalTarget.off?.("SIGINT", onSigint)
+      signalTarget.removeListener?.("SIGINT", onSigint)
       input.setRawMode(wasRaw)
+      if (wasPaused) input.pause?.()
       output.write("\n")
+    }
+    const cancel = () => {
+      cleanup()
+      reject(new Error("cancelled"))
+    }
+    const onSigint = () => {
+      cancel()
     }
     const onKeypress = (str, key = {}) => {
       if (key.name === "return" || key.name === "enter") {
@@ -194,8 +209,7 @@ export const readApiKey = async ({
         return
       }
       if (key.ctrl && key.name === "c") {
-        cleanup()
-        reject(new Error("cancelled"))
+        cancel()
         return
       }
       if (key.name === "backspace" || key.name === "delete") {
@@ -208,6 +222,8 @@ export const readApiKey = async ({
     output.write(prompt)
     input.setRawMode(true)
     input.on("keypress", onKeypress)
+    signalTarget.once?.("SIGINT", onSigint)
+    input.resume?.()
   })
 }
 
