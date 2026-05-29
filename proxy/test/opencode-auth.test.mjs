@@ -1,0 +1,100 @@
+import assert from "node:assert/strict"
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { spawn } from "node:child_process"
+import { describe, test } from "node:test"
+
+import {
+  listOpenCodeProviderChoices,
+  writeOpenCodeCredential,
+} from "../src/opencode-auth.mjs"
+
+const makeTempDir = () => mkdtemp(join(tmpdir(), "opencode-auth-"))
+const readJson = async (path) => JSON.parse(await readFile(path, "utf8"))
+
+const runNode = (args, { input = "" } = {}) => new Promise((resolve) => {
+  const child = spawn(process.execPath, args, { stdio: ["pipe", "pipe", "pipe"] })
+  let stdout = ""
+  let stderr = ""
+  child.stdout.on("data", (chunk) => { stdout += chunk })
+  child.stderr.on("data", (chunk) => { stderr += chunk })
+  child.on("close", (status) => resolve({ status, stdout, stderr }))
+  child.stdin.end(input)
+})
+
+describe("OpenCode auth bootstrap", () => {
+  test("lists providers from existing OpenCode config", async () => {
+    const dir = await makeTempDir()
+    const configPath = join(dir, "opencode.json")
+    await writeFile(configPath, JSON.stringify({
+      provider: {
+        "openai-compatible-cached": { name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
+        "anthropic-cached": { name: "Anthropic cached", npm: "@ai-sdk/anthropic" },
+      },
+    }))
+
+    const choices = await listOpenCodeProviderChoices({ configPath })
+
+    assert.deepEqual(choices, [
+      { id: "anthropic-cached", name: "Anthropic cached", npm: "@ai-sdk/anthropic" },
+      { id: "openai-compatible-cached", name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
+    ])
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test("writes a provider api key while preserving existing auth entries", async () => {
+    const dir = await makeTempDir()
+    const authPath = join(dir, "auth.json")
+    await writeFile(authPath, JSON.stringify({
+      deepseek: { type: "api", key: "sk-deepseek" },
+    }))
+    await chmod(authPath, 0o644)
+
+    const result = await writeOpenCodeCredential({
+      authPath,
+      providerId: "anthropic-cached",
+      apiKey: "sk-anthropic",
+    })
+
+    const auth = await readJson(authPath)
+    const mode = (await stat(authPath)).mode & 0o777
+    assert.equal(result.providerId, "anthropic-cached")
+    assert.deepEqual(auth, {
+      deepseek: { type: "api", key: "sk-deepseek" },
+      "anthropic-cached": { type: "api", key: "sk-anthropic" },
+    })
+    assert.equal(mode, 0o600)
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test("interactive CLI lets the user select a provider and enter a key", async () => {
+    const dir = await makeTempDir()
+    const configPath = join(dir, "opencode.json")
+    const authPath = join(dir, "auth.json")
+    await writeFile(configPath, JSON.stringify({
+      provider: {
+        "openai-compatible-cached": { name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
+        "anthropic-cached": { name: "Anthropic cached", npm: "@ai-sdk/anthropic" },
+      },
+    }))
+
+    const result = await runNode([
+      new URL("../bin/opencode-cache-proxy-auth.mjs", import.meta.url).pathname,
+      "--opencode-config",
+      configPath,
+      "--auth-path",
+      authPath,
+    ], { input: "1\nsk-interactive\n" })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /1\. anthropic-cached/)
+    assert.match(result.stdout, /credential stored for anthropic-cached/)
+    const auth = await readJson(authPath)
+    assert.equal(auth["anthropic-cached"].key, "sk-interactive")
+
+    await rm(dir, { recursive: true, force: true })
+  })
+})

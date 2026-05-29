@@ -52,9 +52,12 @@ unrelated providers and hooks. The OpenCode providers it writes to
 Authenticate cached providers with OpenCode auth storage:
 
 ```bash
-opencode auth login -p openai-compatible-cached
-opencode auth login -p anthropic-cached
+node bin/opencode-cache-proxy-auth.mjs
 ```
+
+The auth bootstrap reads the provider list from `opencode.json`, prompts you to
+choose one provider, then writes that provider's API key to
+`~/.local/share/opencode/auth.json`. Run it once per provider you want to use.
 
 See the [root README](../README.md) for full setup instructions.
 

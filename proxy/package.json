@@ -5,7 +5,8 @@
   "bin": {
     "bailian-cache-proxy": "./bin/bailian-cache-proxy.mjs",
     "bailian-cache-proxy-configure": "./bin/bailian-cache-proxy-configure.mjs",
-    "bailian-cache-proxy-qwen-hook": "./bin/bailian-cache-proxy-qwen-hook.mjs"
+    "bailian-cache-proxy-qwen-hook": "./bin/bailian-cache-proxy-qwen-hook.mjs",
+    "opencode-cache-proxy-auth": "./bin/opencode-cache-proxy-auth.mjs"
   },
   "scripts": {
     "test": "node --test"

@@ -41,7 +41,8 @@ plugins/
 - **Node.js** >= 20 (uses `node:test`, `fetch`, ESM)
 - **OpenCode** ([install](https://opencode.ai)), **Qwen Code**, or another
   OpenAI-compatible client
-- For OpenCode, provider API keys are collected with `opencode auth login`.
+- For OpenCode, provider API keys are stored in OpenCode auth storage via the
+  bundled interactive bootstrap.
 
 ## Setup
 
@@ -60,12 +61,13 @@ cd opencode-cache-proxy
 
 ```bash
 node proxy/bin/bailian-cache-proxy-configure.mjs opencode
-opencode auth login -p openai-compatible-cached
-opencode auth login -p anthropic-cached
+node proxy/bin/opencode-cache-proxy-auth.mjs
 ```
 
-OpenCode stores provider keys in `~/.local/share/opencode/auth.json`. The
-OpenCode provider config carries proxy-only upstream/cache settings in
+The auth bootstrap reads the provider list from OpenCode's existing
+`opencode.json`, lets you choose a provider, and writes the API key to
+`~/.local/share/opencode/auth.json`. Run it once per provider you want to use.
+The OpenCode provider config carries proxy-only upstream/cache settings in
 `options.headers`; the proxy strips those `x-cache-proxy-*` headers before
 forwarding requests upstream.
 The dynamic upstream override header is honored only for loopback clients; if
@@ -150,13 +152,15 @@ the OpenAI-compatible chat-completions route; `anthropic-cached` uses the
 Anthropic Messages route via `@ai-sdk/anthropic`. Other OpenCode providers are
 unaffected.
 
-Use OpenCode's provider auth flow so provider keys are stored in
+Use the bundled auth bootstrap so provider keys are stored in
 `~/.local/share/opencode/auth.json`:
 
 ```bash
-opencode auth login -p openai-compatible-cached
-opencode auth login -p anthropic-cached
+node proxy/bin/opencode-cache-proxy-auth.mjs
 ```
+
+The command shows the existing OpenCode providers, prompts for one API key, and
+preserves any credentials already present in `auth.json`.
 
 #### Qwen Code provider
 
