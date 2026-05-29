@@ -12,7 +12,7 @@ export const extractProxyControlHeaders = (headers = {}) => {
   const cleanHeaders = {}
   const control = {}
 
-  for (const [key, value] of Object.entries(headers)) {
+  for (const [key, value] of Object.entries(headers ?? {})) {
     const lowerKey = key.toLowerCase()
     if (lowerKey.startsWith(CONTROL_PREFIX)) {
       const controlKey = CONTROL_KEYS.get(lowerKey)

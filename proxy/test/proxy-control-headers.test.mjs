@@ -39,4 +39,8 @@ describe("extractProxyControlHeaders", () => {
     assert.deepEqual(result.control, {})
     assert.deepEqual(result.headers, { authorization: "Bearer sk-test" })
   })
+
+  test("treats null headers as empty", () => {
+    assert.deepEqual(extractProxyControlHeaders(null), { control: {}, headers: {} })
+  })
 })
