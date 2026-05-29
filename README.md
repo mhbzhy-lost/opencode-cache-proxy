@@ -141,7 +141,16 @@ Add a custom provider in your `opencode.json` (usually at
         }
       },
       "models": {
-        "claude-opus-4-6": { "name": "Claude Opus 4.6" }
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6",
+          "options": { "effort": "high" },
+          "variants": {
+            "low": { "effort": "low" },
+            "medium": { "effort": "medium" },
+            "high": { "effort": "high" },
+            "max": { "effort": "max" }
+          }
+        }
       }
     }
   }
@@ -153,6 +162,8 @@ the OpenAI-compatible chat-completions route; `anthropic-idealab-cached` uses
 the Anthropic Messages route via `@ai-sdk/anthropic` and carries the Idealab
 upstream plus Claude-compatible upstream user-agent in provider headers. Add
 another platform-specific Anthropic provider when another upstream is needed.
+The Opus model defaults to high effort and exposes `low`, `medium`, `high`,
+and `max` OpenCode variants for switching thinking intensity.
 Other OpenCode providers are unaffected.
 
 Use the bundled auth bootstrap so provider keys are stored in

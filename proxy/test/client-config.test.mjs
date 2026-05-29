@@ -79,6 +79,15 @@ describe("client cache proxy configuration", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     )
     assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), ["claude-opus-4-6"])
+    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].options, {
+      effort: "high",
+    })
+    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
+      low: { effort: "low" },
+      medium: { effort: "medium" },
+      high: { effort: "high" },
+      max: { effort: "max" },
+    })
     assert.deepEqual(Object.keys(config.provider["openai-compatible-cached"].models), [
       "qwen3.6-plus",
       "qwen3.6-plus-nothink",
@@ -137,6 +146,12 @@ describe("client cache proxy configuration", () => {
       "stable-user",
     )
     assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), ["claude-opus-4-6"])
+    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
+      low: { effort: "low" },
+      medium: { effort: "medium" },
+      high: { effort: "high" },
+      max: { effort: "max" },
+    })
 
     await rm(dir, { recursive: true, force: true })
   })

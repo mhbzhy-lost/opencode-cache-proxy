@@ -20,6 +20,13 @@ const ANTHROPIC_MODEL_NAMES = {
   "claude-opus-4-6": "Claude Opus 4.6",
 }
 
+const ANTHROPIC_OPUS_EFFORT_VARIANTS = {
+  low: { effort: "low" },
+  medium: { effort: "medium" },
+  high: { effort: "high" },
+  max: { effort: "max" },
+}
+
 const QWEN_MODEL_NAMES = {
   "qwen3.6-plus": "Qwen 3.6 Plus (cached)",
   "qwen3.7-max": "Qwen 3.7 Max (cached)",
@@ -130,7 +137,14 @@ export const buildOpenCodeAnthropicProvider = ({
     },
   },
   models: Object.fromEntries(
-    ["claude-opus-4-6"].map((modelId) => [modelId, { name: ANTHROPIC_MODEL_NAMES[modelId] || modelId }]),
+    ["claude-opus-4-6"].map((modelId) => [
+      modelId,
+      {
+        name: ANTHROPIC_MODEL_NAMES[modelId] || modelId,
+        options: { effort: "high" },
+        variants: ANTHROPIC_OPUS_EFFORT_VARIANTS,
+      },
+    ]),
   ),
 })
 

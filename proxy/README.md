@@ -43,12 +43,24 @@ unrelated providers and hooks. The OpenCode providers it writes to
         }
       },
       "models": {
-        "claude-opus-4-6": { "name": "Claude Opus 4.6" }
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6",
+          "options": { "effort": "high" },
+          "variants": {
+            "low": { "effort": "low" },
+            "medium": { "effort": "medium" },
+            "high": { "effort": "high" },
+            "max": { "effort": "max" }
+          }
+        }
       }
     }
   }
 }
 ```
+
+The Opus model defaults to high effort and exposes `low`, `medium`, `high`,
+and `max` OpenCode variants for switching thinking intensity.
 
 Authenticate cached providers with OpenCode auth storage:
 
