@@ -227,6 +227,61 @@ describe("createAnthropicHandler", () => {
     }
   })
 
+  test("rewrites Anthropic context-size aliases to the real upstream model", async () => {
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedBody = JSON.parse(await readText(request))
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({
+        id: "msg_model_alias",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-4-6",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 1,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const records = []
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
+      cacheOptions: { cacheStrategy: "cache", minCacheTokens: 1 },
+      usageRecorder: { fireAndForget: (entry) => records.push(entry) },
+      logger: { error: () => {} },
+    })
+
+    const proxy = createServer((req, res) => handler(req, res))
+    const proxyAddress = await listen(proxy)
+
+    try {
+      const response = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          headers: { "x-api-key": "sk-client" },
+          body: JSON.stringify({
+            model: "claude-opus-4-6-500k",
+            max_tokens: 10,
+            system: [{ type: "text", text: "stable" }],
+            messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          }),
+        },
+      )
+
+      assert.equal(response.status, 200)
+      assert.equal(receivedBody.model, "claude-opus-4-6")
+      assert.equal(records[0].model, "claude-opus-4-6-500k")
+    } finally {
+      await close(proxy)
+      await close(upstream)
+    }
+  })
+
   test("rejects Anthropic upstream control headers from non-loopback clients", async () => {
     const handler = createAnthropicHandler({
       upstreamBaseUrl: "http://127.0.0.1:1",

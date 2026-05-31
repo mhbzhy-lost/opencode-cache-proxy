@@ -98,6 +98,12 @@ const computeAnthropicCacheHitRatio = (usage) => {
 const shouldBypassCachePlanning = (cacheOptions) =>
   String(cacheOptions?.cacheStrategy || "").toLowerCase().trim() === "bypass"
 
+const resolveAnthropicUpstreamModel = (model) => {
+  if (typeof model !== "string") return model
+  const match = model.match(/^(claude-opus-4-6)-(?:200k|300k|500k|1m)$/)
+  return match ? match[1] : model
+}
+
 const fillMissingMetadataUserId = (body, metadataUserId) => {
   if (!metadataUserId) return body
   const metadata = body?.metadata
@@ -222,6 +228,11 @@ export const createAnthropicHandler = ({
       }
 
       if (!bypassCachePlanning) {
+        bodyBuffer = Buffer.from(JSON.stringify(planned))
+      }
+      const upstreamModel = resolveAnthropicUpstreamModel(planned?.model)
+      if (upstreamModel !== planned?.model) {
+        planned = { ...planned, model: upstreamModel }
         bodyBuffer = Buffer.from(JSON.stringify(planned))
       }
 

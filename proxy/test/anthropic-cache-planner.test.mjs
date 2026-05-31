@@ -418,6 +418,40 @@ describe("planAnthropicCacheMarkers", () => {
     assert.equal(labels.includes("fraction"), false)
   })
 
+  test("uses a deep stable marker for long no-turn-prev conversations", () => {
+    const messages = [userText(repeat("initial-user", 300))]
+    for (let i = 0; i < 70; i++) {
+      messages.push(toolUse(`t${i}`, `tool_${i}`))
+      messages.push(toolResult(`t${i}`, repeat(`result-${i}`, 180)))
+    }
+    const body = {
+      model: "claude-opus-4-6",
+      system: systemBlocks(repeat("system", 300)),
+      messages,
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const labels = diagnostics.markers.map((m) => m.location)
+    const deepMarker = diagnostics.markers.find((m) => m.location === "no-turn-depth")
+    const earlyMarker = diagnostics.markers.find((m) => m.location === "early-stable")
+    const tailMarker = diagnostics.markers.at(-1)
+
+    assert.equal(diagnostics.marker_count, 4)
+    assert.equal(countAnthropicCacheMarkers(planned), 4)
+    assert.ok(labels.includes("system"))
+    assert.ok(labels.includes("turn-current"))
+    assert.ok(deepMarker, "expected long no-turn-prev request to use no-turn-depth")
+    assert.equal(earlyMarker, undefined)
+    assert.ok(
+      deepMarker.prefix_tokens >= 24000,
+      `expected deep marker near a stable token bucket, got ${deepMarker.prefix_tokens}`,
+    )
+    assert.ok(
+      tailMarker.global_index - deepMarker.global_index <= 18,
+      "tail marker should remain within the lookback guard of the deep marker",
+    )
+  })
+
   test("uses previous and current user anchors before falling back in two-turn conversations", () => {
     const body = {
       model: "claude-opus-4-6",

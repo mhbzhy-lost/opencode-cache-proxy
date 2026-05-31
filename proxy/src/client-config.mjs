@@ -20,6 +20,14 @@ const ANTHROPIC_MODEL_NAMES = {
   "claude-opus-4-6": "Claude Opus 4.6",
 }
 
+const ANTHROPIC_OPUS_CONTEXT_MODELS = {
+  "claude-opus-4-6": { name: "Claude Opus 4.6", context: 200000 },
+  "claude-opus-4-6-200k": { name: "Claude Opus 4.6 (200k)", context: 200000 },
+  "claude-opus-4-6-300k": { name: "Claude Opus 4.6 (300k)", context: 300000 },
+  "claude-opus-4-6-500k": { name: "Claude Opus 4.6 (500k)", context: 500000 },
+  "claude-opus-4-6-1m": { name: "Claude Opus 4.6 (1M)", context: 1000000 },
+}
+
 const ANTHROPIC_OPUS_EFFORT_VARIANTS = {
   low: { effort: "low" },
   medium: { effort: "medium" },
@@ -137,12 +145,12 @@ export const buildOpenCodeAnthropicProvider = ({
     },
   },
   models: Object.fromEntries(
-    ["claude-opus-4-6"].map((modelId) => [
+    Object.entries(ANTHROPIC_OPUS_CONTEXT_MODELS).map(([modelId, model]) => [
       modelId,
       {
-        name: ANTHROPIC_MODEL_NAMES[modelId] || modelId,
+        name: model.name || ANTHROPIC_MODEL_NAMES[modelId] || modelId,
         limit: {
-          context: 200000,
+          context: model.context,
           output: 65536,
         },
         options: { effort: "high" },

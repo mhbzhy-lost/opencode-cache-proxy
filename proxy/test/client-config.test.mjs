@@ -78,7 +78,13 @@ describe("client cache proxy configuration", () => {
       config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     )
-    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), ["claude-opus-4-6"])
+    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), [
+      "claude-opus-4-6",
+      "claude-opus-4-6-200k",
+      "claude-opus-4-6-300k",
+      "claude-opus-4-6-500k",
+      "claude-opus-4-6-1m",
+    ])
     assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].options, {
       effort: "high",
     })
@@ -86,6 +92,19 @@ describe("client cache proxy configuration", () => {
       context: 200000,
       output: 65536,
     })
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(config.provider["anthropic-idealab-cached"].models)
+          .map(([id, model]) => [id, model.limit.context]),
+      ),
+      {
+        "claude-opus-4-6": 200000,
+        "claude-opus-4-6-200k": 200000,
+        "claude-opus-4-6-300k": 300000,
+        "claude-opus-4-6-500k": 500000,
+        "claude-opus-4-6-1m": 1000000,
+      },
+    )
     assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
       low: { effort: "low" },
       medium: { effort: "medium" },
@@ -149,7 +168,13 @@ describe("client cache proxy configuration", () => {
       config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
       "stable-user",
     )
-    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), ["claude-opus-4-6"])
+    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), [
+      "claude-opus-4-6",
+      "claude-opus-4-6-200k",
+      "claude-opus-4-6-300k",
+      "claude-opus-4-6-500k",
+      "claude-opus-4-6-1m",
+    ])
     assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
       low: { effort: "low" },
       medium: { effort: "medium" },

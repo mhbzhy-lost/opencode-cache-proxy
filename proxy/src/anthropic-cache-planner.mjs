@@ -4,6 +4,7 @@ const DEFAULT_MIN_CACHE_TOKENS = 1024
 const DEFAULT_MAX_MARKERS = 4
 const DEFAULT_MARKER_FRACTIONS = Object.freeze([0.5, 0.85])
 const MAX_LOOKBACK_GAP = 18
+const NO_TURN_DEPTH_BUCKETS = Object.freeze([512000, 256000, 128000, 64000, 32000])
 
 const marker = Object.freeze({ type: "ephemeral" })
 const CACHEABLE_CONTENT_TYPES = new Set(["text", "tool_use", "tool_result"])
@@ -293,6 +294,22 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     selectBlock(turnAnchors[1], "turn-current")
   } else if (turnAnchors.length === 1) {
     selectBlock(turnAnchors[0], "turn-current")
+  }
+
+  if (turnAnchors.length < 2 && selected.size < markerBudget) {
+    const anchorIndex = turnAnchors.at(-1)?.globalIndex ?? lastSystem?.globalIndex ?? -1
+    const targetTokens = NO_TURN_DEPTH_BUCKETS.find((bucket) => bucket < tail.prefixTokens)
+    const deepStable = targetTokens
+      ? eligible.findLast(
+        (b) =>
+          b.prefixTokens <= targetTokens &&
+          b.globalIndex > anchorIndex &&
+          b.globalIndex !== tail.globalIndex &&
+          !selected.has(b.globalIndex) &&
+          !selectedByGroup.has(b.groupKey),
+      )
+      : null
+    if (deepStable) selectBlock(deepStable, "no-turn-depth")
   }
 
   if (turnAnchors.length < 2 && selected.size < markerBudget) {

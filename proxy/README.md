@@ -45,6 +45,7 @@ unrelated providers and hooks. The OpenCode providers it writes to
       "models": {
         "claude-opus-4-6": {
           "name": "Claude Opus 4.6",
+          "limit": { "context": 200000, "output": 65536 },
           "options": { "effort": "high" },
           "variants": {
             "low": { "effort": "low" },
@@ -52,6 +53,22 @@ unrelated providers and hooks. The OpenCode providers it writes to
             "high": { "effort": "high" },
             "max": { "effort": "max" }
           }
+        },
+        "claude-opus-4-6-200k": {
+          "name": "Claude Opus 4.6 (200k)",
+          "limit": { "context": 200000, "output": 65536 }
+        },
+        "claude-opus-4-6-300k": {
+          "name": "Claude Opus 4.6 (300k)",
+          "limit": { "context": 300000, "output": 65536 }
+        },
+        "claude-opus-4-6-500k": {
+          "name": "Claude Opus 4.6 (500k)",
+          "limit": { "context": 500000, "output": 65536 }
+        },
+        "claude-opus-4-6-1m": {
+          "name": "Claude Opus 4.6 (1M)",
+          "limit": { "context": 1000000, "output": 65536 }
         }
       }
     }
@@ -59,8 +76,12 @@ unrelated providers and hooks. The OpenCode providers it writes to
 }
 ```
 
-The Opus model defaults to high effort and exposes `low`, `medium`, `high`,
-and `max` OpenCode variants for switching thinking intensity.
+The Opus provider exposes context-size aliases for OpenCode's model selector:
+`claude-opus-4-6-200k`, `claude-opus-4-6-300k`,
+`claude-opus-4-6-500k`, and `claude-opus-4-6-1m`. The proxy rewrites these
+aliases to the upstream `claude-opus-4-6` model before forwarding the request.
+Each alias defaults to high effort and exposes `low`, `medium`, `high`, and
+`max` OpenCode variants for switching thinking intensity.
 
 Authenticate cached providers with OpenCode auth storage:
 
@@ -263,8 +284,11 @@ Request B (turn 2, in-flight): [system, turn1_user, turn2_user, tail]
 ```
 
 If fewer than two turn-boundary user messages are found (short conversations
-or tool-only interactions), the planner falls back to the `fraction` strategy
-for the remaining slots.
+or tool-only interactions), short requests keep an `early-stable` marker near
+the first stable block after the user prompt. Long `no-turn-prev` requests use
+a `no-turn-depth` marker at a stable token bucket (32k, 64k, 128k, ...)
+instead. This prevents compacted or first-turn tool-heavy OpenCode sessions
+from repeatedly hitting only a shallow prefix while the uncached tail grows.
 
 ### `fraction` (legacy)
 
