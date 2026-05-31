@@ -3,8 +3,10 @@ import { createHash } from "node:crypto"
 const DEFAULT_MIN_CACHE_TOKENS = 1024
 const DEFAULT_MAX_MARKERS = 4
 const DEFAULT_MARKER_FRACTIONS = Object.freeze([0.5, 0.85])
-const MAX_LOOKBACK_GAP = 18
 const NO_TURN_DEPTH_BUCKETS = Object.freeze([512000, 256000, 128000, 64000, 32000])
+const OPUS_300K_DEPTH_BUCKETS = Object.freeze([128000, 96000, 64000])
+const OPUS_300K_MIN_DEEP_CONTEXT_TOKENS = 96000
+const OPUS_300K_MIN_DEEP_ANCHOR_TOKENS = 64000
 
 const marker = Object.freeze({ type: "ephemeral" })
 const CACHEABLE_CONTENT_TYPES = new Set(["text", "tool_use", "tool_result"])
@@ -33,6 +35,9 @@ const stableStringify = (value) => {
 }
 
 const cloneJson = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)))
+
+const isOpus300kAlias = (model) =>
+  typeof model === "string" && model.trim() === "claude-opus-4-6-300k"
 
 const stripCacheControl = (block) => {
   if (!block || typeof block !== "object") return block
@@ -296,6 +301,33 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     selectBlock(turnAnchors[0], "turn-current")
   }
 
+  if (
+    isOpus300kAlias(planned.model) &&
+    tail.prefixTokens >= OPUS_300K_MIN_DEEP_CONTEXT_TOKENS &&
+    turnAnchors.length >= 2 &&
+    selected.size < markerBudget + 1
+  ) {
+    const deepestTurnAnchor = turnAnchors.at(-1)
+    if (deepestTurnAnchor.prefixTokens < OPUS_300K_MIN_DEEP_ANCHOR_TOKENS) {
+      const targetTokens = OPUS_300K_DEPTH_BUCKETS.find((bucket) => bucket < tail.prefixTokens)
+      const depthAnchor = targetTokens
+        ? eligible.findLast(
+          (b) =>
+            b.prefixTokens <= targetTokens &&
+            b.prefixTokens >= OPUS_300K_MIN_DEEP_ANCHOR_TOKENS &&
+            b.globalIndex !== tail.globalIndex &&
+            !selected.has(b.globalIndex) &&
+            !selectedByGroup.has(b.groupKey),
+        )
+        : null
+      if (depthAnchor) {
+        const replaceAnchor = turnAnchors[0]
+        removeSelectedIndex(replaceAnchor.globalIndex)
+        selectBlock(depthAnchor, "300k-depth-anchor")
+      }
+    }
+  }
+
   if (turnAnchors.length < 2 && selected.size < markerBudget) {
     const anchorIndex = turnAnchors.at(-1)?.globalIndex ?? lastSystem?.globalIndex ?? -1
     const targetTokens = NO_TURN_DEPTH_BUCKETS.find((bucket) => bucket < tail.prefixTokens)
@@ -341,26 +373,6 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
             !selectedByGroup.has(b.groupKey),
         )
         if (block) selectBlock(block, "fraction")
-      }
-    }
-  }
-
-  // 20-block lookback guard
-  const sortedIndexes = [...selected.keys()].sort((a, b) => a - b)
-  if (sortedIndexes.length >= 2) {
-    const tailIdx = sortedIndexes.at(-1)
-    const prevIdx = sortedIndexes.at(-2)
-    if (tailIdx - prevIdx > MAX_LOOKBACK_GAP) {
-      removeSelectedIndex(tailIdx)
-      const cappedIdx = prevIdx + MAX_LOOKBACK_GAP
-      const replacement = eligible.findLast(
-        (b) =>
-          b.globalIndex <= cappedIdx &&
-          !selected.has(b.globalIndex) &&
-          !selectedByGroup.has(b.groupKey),
-      )
-      if (replacement) {
-        selectBlock(replacement, "tail")
       }
     }
   }

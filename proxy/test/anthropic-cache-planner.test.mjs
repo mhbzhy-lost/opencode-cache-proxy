@@ -139,7 +139,7 @@ describe("planAnthropicCacheMarkers", () => {
     }
   })
 
-  test("respects 20-block lookback: pulls tail back when gap > 18", () => {
+  test("keeps first-turn tool-heavy markers within lookback when a bridge marker is available", () => {
     const messages = [userText(repeat("turn1", 300))]
     for (let i = 0; i < 12; i++) {
       messages.push(toolUse(`t${i}`, `tool_${i}`))
@@ -158,6 +158,66 @@ describe("planAnthropicCacheMarkers", () => {
       const gap = tailMarker.block_index - prevMarker.block_index
       assert.ok(gap <= 18, `tail gap ${gap} exceeds 18-block lookback limit`)
     }
+  })
+
+  test("keeps the real tail marker for future writes even when it is beyond lookback from turn anchors", () => {
+    const messages = [
+      userText(repeat("turn1", 300)),
+      assistantText(repeat("assistant1", 300)),
+      userText(repeat("turn2", 300)),
+    ]
+    for (let i = 0; i < 24; i++) {
+      messages.push(toolUse(`tail_t${i}`, `tool_${i}`))
+      messages.push(toolResult(`tail_t${i}`, repeat(`tail-result-${i}`, 80)))
+    }
+    const body = {
+      model: "claude-opus-4-6-300k",
+      system: systemBlocks(repeat("system", 300)),
+      messages,
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const labels = diagnostics.markers.map((m) => m.location)
+    const tailMarker = diagnostics.markers.find((m) => m.location === "tail")
+
+    assert.equal(diagnostics.marker_count, 4)
+    assert.equal(countAnthropicCacheMarkers(planned), 4)
+    assert.ok(labels.includes("turn-prev"))
+    assert.ok(labels.includes("turn-current"))
+    assert.equal(tailMarker.block_index, diagnostics.content_block_count - 1)
+  })
+
+  test("uses a 300k depth anchor when early turn anchors are too shallow for a long context", () => {
+    const messages = [
+      userText(repeat("turn1", 300)),
+      assistantText(repeat("assistant1", 300)),
+      userText(repeat("turn2", 300)),
+    ]
+    for (let i = 0; i < 130; i++) {
+      messages.push(toolUse(`deep_t${i}`, `tool_${i}`))
+      messages.push(toolResult(`deep_t${i}`, repeat(`deep-result-${i}`, 220)))
+    }
+    const body = {
+      model: "claude-opus-4-6-300k",
+      system: systemBlocks(repeat("system", 300)),
+      messages,
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const labels = diagnostics.markers.map((m) => m.location)
+    const depthMarker = diagnostics.markers.find((m) => m.location === "300k-depth-anchor")
+    const tailMarker = diagnostics.markers.find((m) => m.location === "tail")
+
+    assert.equal(diagnostics.marker_count, 4)
+    assert.equal(countAnthropicCacheMarkers(planned), 4)
+    assert.ok(labels.includes("system"))
+    assert.ok(labels.includes("turn-current"))
+    assert.ok(depthMarker, "expected 300k planner to keep a mid/deep stable anchor")
+    assert.ok(
+      depthMarker.prefix_tokens >= 64000,
+      `expected 300k depth anchor at or beyond 64k tokens, got ${depthMarker.prefix_tokens}`,
+    )
+    assert.equal(tailMarker.block_index, diagnostics.content_block_count - 1)
   })
 
   test("handles null/undefined body gracefully", () => {
