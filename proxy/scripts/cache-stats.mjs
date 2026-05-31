@@ -12,7 +12,8 @@
  *   --log <path>         path to usage.jsonl (default: $BAILIAN_CACHE_PROXY_USAGE_LOG
  *                        or $XDG_CACHE_HOME/bailian-cache-proxy/usage.jsonl
  *                        or ~/.cache/bailian-cache-proxy/usage.jsonl)
- *   --by model|status    grouping for the breakdown table (default: model)
+ *   --by model|status|protocol|turn-prev
+ *                        grouping for the breakdown table (default: model)
  *   --json               emit summary as JSON instead of formatted text
  */
 
@@ -28,6 +29,7 @@ const args = {
   by: "model",
   json: false,
 }
+const validGroupBys = new Set(["model", "status", "protocol", "turn-prev"])
 const requireValue = (flag, value) => {
   if (value === undefined) {
     console.error(`${flag} requires a value`)
@@ -40,14 +42,20 @@ for (let i = 0; i < argv.length; i += 1) {
   const a = argv[i]
   if (a === "--since") args.since = requireValue("--since", argv[++i])
   else if (a === "--log") args.log = requireValue("--log", argv[++i])
-  else if (a === "--by") args.by = requireValue("--by", argv[++i])
+  else if (a === "--by") {
+    args.by = requireValue("--by", argv[++i])
+    if (!validGroupBys.has(args.by)) {
+      console.error(`invalid --by: ${args.by}`)
+      process.exit(2)
+    }
+  }
   else if (a === "--json") args.json = true
   else if (a === "-h" || a === "--help") {
     process.stdout.write(
       [
         "Usage: cache-stats.mjs [--since today|24h|30m|YYYY-MM-DD|all]",
         "                       [--log path/to/usage.jsonl]",
-        "                       [--by model|status] [--json]",
+        "                       [--by model|status|protocol|turn-prev] [--json]",
       ].join("\n") + "\n",
     )
     process.exit(0)
@@ -95,8 +103,8 @@ try {
   throw err
 }
 
-// Stream the file line-by-line so multi-day logs (potentially hundreds of MB)
-// don't have to fit in RAM all at once.
+// Read line-by-line to avoid loading one huge string for multi-day logs.
+// Parsed records are kept in memory so they can be grouped after filtering.
 const records = []
 let totalLineCount = 0
 const lineStream = createInterface({
@@ -125,22 +133,44 @@ const filtered =
 const initBucket = () => ({
   count: 0,
   failures: 0,
+  input_tokens: 0,
   prompt_tokens: 0,
+  cache_read_input_tokens: 0,
   cached_tokens: 0,
   cache_creation_input_tokens: 0,
+  cache_denominator_tokens: 0,
+  output_tokens: 0,
   completion_tokens: 0,
   total_duration_ms: 0,
   stream_count: 0,
   stream_usage_seen: 0,
 })
 
+const normalizedUsage = (r) => {
+  const isAnthropic =
+    r.protocol === "anthropic" ||
+    r.cache_read_input_tokens !== undefined ||
+    r.input_tokens !== undefined
+  const input = Number(isAnthropic ? r.input_tokens || 0 : r.prompt_tokens || 0)
+  const read = Number(isAnthropic ? r.cache_read_input_tokens || 0 : r.cached_tokens || 0)
+  const created = Number(r.cache_creation_input_tokens || 0)
+  const output = Number(isAnthropic ? r.output_tokens || 0 : r.completion_tokens || 0)
+  const cacheDenominator = isAnthropic ? input + read + created : input
+  return { input, read, created, output, cacheDenominator }
+}
+
 const accumulate = (bucket, r) => {
+  const usage = normalizedUsage(r)
   bucket.count += 1
   if (typeof r.status === "number" && r.status >= 400) bucket.failures += 1
-  bucket.prompt_tokens += Number(r.prompt_tokens || 0)
-  bucket.cached_tokens += Number(r.cached_tokens || 0)
-  bucket.cache_creation_input_tokens += Number(r.cache_creation_input_tokens || 0)
-  bucket.completion_tokens += Number(r.completion_tokens || 0)
+  bucket.input_tokens += usage.input
+  bucket.prompt_tokens += usage.input
+  bucket.cache_read_input_tokens += usage.read
+  bucket.cached_tokens += usage.read
+  bucket.cache_creation_input_tokens += usage.created
+  bucket.cache_denominator_tokens += usage.cacheDenominator
+  bucket.output_tokens += usage.output
+  bucket.completion_tokens += usage.output
   bucket.total_duration_ms += Number(r.duration_ms || 0)
   if (r.is_stream) {
     bucket.stream_count += 1
@@ -148,11 +178,17 @@ const accumulate = (bucket, r) => {
   }
 }
 
+const turnPrevKey = (r) =>
+  r.cache_diagnostic?.markers?.find((m) => m.location === "turn-prev")?.prefix_hash ||
+  "no-turn-prev"
+
 const overall = initBucket()
 const groups = new Map()
 
 const groupKeyFor = (r) => {
   if (args.by === "status") return String(r.status ?? "unknown")
+  if (args.by === "protocol") return r.protocol || "openai-compatible"
+  if (args.by === "turn-prev") return turnPrevKey(r)
   return r.model || "unknown"
 }
 
@@ -171,11 +207,14 @@ const summarize = (b) => ({
   failures: b.failures,
   success_rate_pct: ratio(b.count - b.failures, b.count),
   avg_duration_ms: b.count > 0 ? Math.round(b.total_duration_ms / b.count) : 0,
+  input_tokens: b.input_tokens,
   prompt_tokens: b.prompt_tokens,
+  cache_read_input_tokens: b.cache_read_input_tokens,
   cached_tokens: b.cached_tokens,
   cache_creation_input_tokens: b.cache_creation_input_tokens,
+  output_tokens: b.output_tokens,
   completion_tokens: b.completion_tokens,
-  cache_hit_ratio_pct: ratio(b.cached_tokens, b.prompt_tokens),
+  cache_hit_ratio_pct: ratio(b.cache_read_input_tokens, b.cache_denominator_tokens),
   stream_requests: b.stream_count,
   stream_usage_capture_pct: ratio(b.stream_usage_seen, b.stream_count),
 })
@@ -222,7 +261,7 @@ console.log(`records in window: ${result.records_in_window} / ${result.total_rec
 console.log()
 console.log(renderTable("OVERALL", result.overall))
 console.log()
-const groupHeader = args.by === "status" ? "BY STATUS" : "BY MODEL"
+const groupHeader = `BY ${args.by.toUpperCase()}`
 for (const [name, summary] of Object.entries(result.groups)) {
   console.log(renderTable(`${groupHeader}: ${name}`, summary))
   console.log()

@@ -356,6 +356,113 @@ describe("planAnthropicCacheMarkers", () => {
     assert.equal(countAnthropicCacheMarkers(planned), 4)
     assert.equal(diagnostics.marker_count, 3)
   })
+
+  test("caps existing tool cache markers at the max marker budget", () => {
+    const body = {
+      model: "qwen3.7-max",
+      tools: Array.from({ length: 5 }, (_, i) => ({
+        name: `Tool${i}`,
+        description: `Tool ${i}`,
+        input_schema: { type: "object", properties: {} },
+        cache_control: { type: "ephemeral" },
+      })),
+      system: systemBlocks(repeat("system", 300)),
+      messages: [userText(repeat("turn", 300))],
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const markerLocations = collectMarkerLocations(planned)
+
+    assert.deepEqual(markerLocations, ["tools.0", "tools.1", "tools.2", "tools.3"])
+    assert.equal(countAnthropicCacheMarkers(planned), 4)
+    assert.equal(diagnostics.marker_count, 0)
+  })
+
+  test("converts long string system prompts into cacheable text blocks", () => {
+    const body = {
+      model: "claude-opus-4-6",
+      system: repeat("system", 600),
+      messages: [userText(repeat("turn", 300))],
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+
+    assert.equal(Array.isArray(planned.system), true)
+    assert.deepEqual(planned.system[0].cache_control, { type: "ephemeral" })
+    assert.equal(planned.system[0].type, "text")
+    assert.ok(diagnostics.total_estimated_tokens > 700)
+    assert.ok(diagnostics.markers.some((m) => m.location === "system"))
+  })
+
+  test("uses first user anchor for first-turn tool-heavy conversations", () => {
+    const messages = [userText(repeat("initial-user", 300))]
+    for (let i = 0; i < 6; i++) {
+      messages.push(toolUse(`t${i}`, `tool_${i}`))
+      messages.push(toolResult(`t${i}`, repeat(`result${i}`, 120)))
+    }
+    const body = {
+      model: "claude-opus-4-6",
+      system: systemBlocks(repeat("system", 300)),
+      messages,
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const labels = diagnostics.markers.map((m) => m.location)
+
+    assert.equal(diagnostics.marker_count, 4)
+    assert.equal(countAnthropicCacheMarkers(planned), 4)
+    assert.ok(labels.includes("system"))
+    assert.ok(labels.includes("turn-current"))
+    assert.ok(labels.includes("early-stable"))
+    assert.ok(labels.includes("tail"))
+    assert.equal(labels.includes("fraction"), false)
+  })
+
+  test("uses previous and current user anchors before falling back in two-turn conversations", () => {
+    const body = {
+      model: "claude-opus-4-6",
+      system: systemBlocks(repeat("system", 300)),
+      messages: [
+        userText(repeat("turn1-user", 300)),
+        assistantText(repeat("turn1-assistant", 300)),
+        userText(repeat("turn2-user", 300)),
+        toolUse("t1", "read"),
+        toolResult("t1", repeat("result", 300)),
+      ],
+    }
+
+    const { body: planned, diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+    const labels = diagnostics.markers.map((m) => m.location)
+    const messageMarkerCounts = planned.messages.map((msg) =>
+      msg.content.filter((block) => block.cache_control).length
+    )
+
+    assert.equal(diagnostics.marker_count, 4)
+    assert.ok(messageMarkerCounts.every((count) => count <= 1))
+    assert.ok(labels.includes("turn-prev"))
+    assert.ok(labels.includes("turn-current"))
+    assert.ok(labels.includes("tail"))
+  })
+
+  test("emits OpenAI-compatible diagnostic hashes for marker drift analysis", () => {
+    const body = {
+      model: "claude-opus-4-6",
+      system: systemBlocks(repeat("system", 300)),
+      messages: [
+        userText(repeat("turn1-user", 300)),
+        assistantText(repeat("turn1-assistant", 300)),
+        userText(repeat("turn2-user", 300)),
+      ],
+    }
+
+    const { diagnostics } = planAnthropicCacheMarkers(body, { minCacheTokens: 32 })
+
+    assert.equal(diagnostics.version, 1)
+    assert.equal(diagnostics.message_count, 3)
+    assert.equal(diagnostics.content_block_count, 4)
+    assert.match(diagnostics.messages_hash, /^[a-f0-9]{16}$/)
+    assert.match(diagnostics.marker_selection_hash, /^[a-f0-9]{16}$/)
+  })
 })
 
 describe("truncateAnthropicBodyForKeepalive", () => {

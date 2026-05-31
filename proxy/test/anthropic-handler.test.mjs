@@ -4,6 +4,7 @@ import { Readable } from "node:stream"
 import { describe, test } from "node:test"
 
 import { createAnthropicHandler } from "../src/anthropic-handler.mjs"
+import { planAnthropicCacheMarkers } from "../src/anthropic-cache-planner.mjs"
 
 const listen = (server) =>
   new Promise((resolve) => {
@@ -23,6 +24,18 @@ const readText = async (request) => {
   for await (const chunk of request) chunks.push(chunk)
   return Buffer.concat(chunks).toString("utf8")
 }
+
+const repeat = (word, n) => Array.from({ length: n }, () => word).join(" ")
+
+const userText = (text) => ({
+  role: "user",
+  content: [{ type: "text", text }],
+})
+
+const assistantText = (text) => ({
+  role: "assistant",
+  content: [{ type: "text", text }],
+})
 
 const makeRequest = async (url, { method = "POST", headers = {}, body } = {}) => {
   const opts = { method, headers: { "content-type": "application/json", ...headers } }
@@ -326,6 +339,73 @@ describe("createAnthropicHandler", () => {
       assert.equal(record.proxy_error, null)
       // cache_hit_ratio = 800 / (100 + 800 + 0) = 0.8889
       assert.equal(record.cache_hit_ratio, 0.8889)
+    } finally {
+      await close(proxy)
+      await close(upstream)
+    }
+  })
+
+  test("registers keepalive with marker[2] prefix to protect the larger stable prefix", async () => {
+    const body = {
+      model: "claude-opus-4-6",
+      max_tokens: 1024,
+      system: [{ type: "text", text: repeat("system", 300) }],
+      messages: [
+        userText(repeat("turn1-user", 300)),
+        assistantText(repeat("turn1-assistant", 300)),
+        userText(repeat("turn2-user", 300)),
+        assistantText(repeat("turn2-assistant", 300)),
+        userText(repeat("turn3-user", 300)),
+      ],
+    }
+    const expectedSessionKey = planAnthropicCacheMarkers(body, {
+      minCacheTokens: 32,
+    }).diagnostics.markers[2].prefix_hash
+
+    const upstream = createServer(async (request, response) => {
+      await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({
+        id: "msg_keepalive_key",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-opus-4-6",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_read_input_tokens: 100,
+          cache_creation_input_tokens: 0,
+        },
+      }))
+    })
+    const upstreamAddress = await listen(upstream)
+
+    const hits = []
+    const handler = createAnthropicHandler({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}`,
+      apiKey: "sk-test",
+      cacheOptions: { minCacheTokens: 32 },
+      keepaliveManager: { registerHit: (entry) => hits.push(entry) },
+      logger: { error: () => {} },
+    })
+    const proxy = createServer((req, res) => handler(req, res))
+    const proxyAddress = await listen(proxy)
+
+    try {
+      const response = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          headers: { "x-api-key": "sk-user-key" },
+          body,
+        },
+      )
+
+      assert.equal(response.status, 200)
+      await response.json()
+      assert.equal(hits.length, 1)
+      assert.equal(hits[0].sessionKey, expectedSessionKey)
+      assert.equal(hits[0].truncatedBody._keepalive_session_key, undefined)
     } finally {
       await close(proxy)
       await close(upstream)

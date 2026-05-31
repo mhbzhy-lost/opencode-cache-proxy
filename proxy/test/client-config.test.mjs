@@ -82,6 +82,10 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].options, {
       effort: "high",
     })
+    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].limit, {
+      context: 200000,
+      output: 65536,
+    })
     assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
       low: { effort: "low" },
       medium: { effort: "medium" },

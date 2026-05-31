@@ -88,6 +88,9 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
   const planned = cloneJson(body)
 
   // Strip existing markers
+  if (typeof planned.system === "string") {
+    planned.system = [{ type: "text", text: planned.system }]
+  }
   if (Array.isArray(planned.system)) {
     planned.system = planned.system.map(stripCacheControl)
   }
@@ -95,6 +98,17 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     planned.messages = planned.messages.map((msg) => {
       if (!msg || !Array.isArray(msg.content)) return msg
       return { ...msg, content: msg.content.map(stripCacheControl) }
+    })
+  }
+  if (Array.isArray(planned.tools)) {
+    let keptToolMarkers = 0
+    planned.tools = planned.tools.map((tool) => {
+      if (!tool?.cache_control) return tool
+      if (keptToolMarkers < maxMarkers) {
+        keptToolMarkers += 1
+        return tool
+      }
+      return stripCacheControl(tool)
     })
   }
 
@@ -155,6 +169,11 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     }
   }
 
+  const messagesHash = shortHash(stableStringify({
+    system: planned.system,
+    messages: planned.messages,
+    tools: planned.tools,
+  }))
   const thinkingUncacheableTail = blocks.at(-1)?.blockType === "thinking" ||
     blocks.at(-1)?.blockType === "redacted_thinking"
   const existingToolMarkerCount = Array.isArray(planned.tools)
@@ -229,9 +248,14 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     return {
       body: planned,
       diagnostics: {
+        version: 1,
+        message_count: Array.isArray(planned.messages) ? planned.messages.length : 0,
+        content_block_count: blocks.length,
         marker_count: markers.length,
         total_estimated_tokens: prefixTokens,
         strategy,
+        messages_hash: messagesHash,
+        marker_selection_hash: shortHash(stableStringify(markers)),
         thinking_uncacheable_tail: thinkingUncacheableTail,
         markers,
       },
@@ -269,6 +293,18 @@ export const planAnthropicCacheMarkers = (body, options = {}) => {
     selectBlock(turnAnchors[1], "turn-current")
   } else if (turnAnchors.length === 1) {
     selectBlock(turnAnchors[0], "turn-current")
+  }
+
+  if (turnAnchors.length < 2 && selected.size < markerBudget) {
+    const anchorIndex = turnAnchors.at(-1)?.globalIndex ?? lastSystem?.globalIndex ?? -1
+    const earlyStable = eligible.find(
+      (b) =>
+        b.globalIndex > anchorIndex &&
+        b.globalIndex !== tail.globalIndex &&
+        !selected.has(b.globalIndex) &&
+        !selectedByGroup.has(b.groupKey),
+    )
+    if (earlyStable) selectBlock(earlyStable, "early-stable")
   }
 
   // Fallback: fill remaining with fraction-based if < markerBudget

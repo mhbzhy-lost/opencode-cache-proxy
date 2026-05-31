@@ -158,12 +158,33 @@ node proxy/scripts/cache-stats.mjs --since 2h
 # Group by status to see failure distribution
 node proxy/scripts/cache-stats.mjs --since today --by status
 
+# Group Anthropic requests by previous-turn marker to isolate cold cohorts
+node proxy/scripts/cache-stats.mjs --since today --by turn-prev
+
 # JSON output for piping into a dashboard / further processing
 node proxy/scripts/cache-stats.mjs --since today --json
 
 # Different log path (e.g. ad-hoc analysis on a copied snapshot)
 node proxy/scripts/cache-stats.mjs --log /tmp/usage-snapshot.jsonl --since all
 ```
+
+For Anthropic-compatible records, cache hit ratio is computed as:
+
+```text
+cache_read_input_tokens /
+  (input_tokens + cache_read_input_tokens + cache_creation_input_tokens)
+```
+
+For OpenAI-compatible records, the same normalized output is derived from
+`prompt_tokens`, `prompt_tokens_details.cached_tokens`, and
+`prompt_tokens_details.cache_creation_input_tokens`; the ratio remains
+`cached_tokens / prompt_tokens` because OpenAI-compatible `prompt_tokens`
+already includes cached input tokens.
+
+The `no-turn-prev` cohort captures first-turn and short-session requests where
+the proxy cannot yet place a previous-turn anchor. This cohort is expected to
+have lower hit rate than mature sessions and is the first place to inspect when
+daily aggregate hit rate drops while recent hot-session hit rate remains high.
 
 ### Raw NDJSON access
 

@@ -215,7 +215,10 @@ export const createAnthropicHandler = ({
       let keepaliveSessionKey = null
       if (cacheDiagnostic?.markers?.length >= 3) {
         keepaliveBody = truncateAnthropicBodyForKeepalive(planned, cacheDiagnostic.markers)
-        keepaliveSessionKey = cacheDiagnostic.markers[0]?.prefix_hash ?? null
+        keepaliveSessionKey =
+          cacheDiagnostic.markers[2]?.prefix_hash ??
+          cacheDiagnostic.markers[0]?.prefix_hash ??
+          null
       }
 
       if (!bypassCachePlanning) {

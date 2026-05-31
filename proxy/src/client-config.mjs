@@ -141,6 +141,10 @@ export const buildOpenCodeAnthropicProvider = ({
       modelId,
       {
         name: ANTHROPIC_MODEL_NAMES[modelId] || modelId,
+        limit: {
+          context: 200000,
+          output: 65536,
+        },
         options: { effort: "high" },
         variants: ANTHROPIC_OPUS_EFFORT_VARIANTS,
       },
