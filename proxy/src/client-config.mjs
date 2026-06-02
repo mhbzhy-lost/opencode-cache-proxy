@@ -7,12 +7,20 @@ import { DEFAULT_CLAUDE_COMPAT_USER_AGENT } from "./anthropic-env.mjs"
 
 const DEFAULT_PORT = 48761
 const DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+const DEFAULT_OPENAI_BAILIAN_TOKEN_PLAN_UPSTREAM_BASE_URL =
+  "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 const DEFAULT_ANTHROPIC_IDEALAB_UPSTREAM_BASE_URL = "https://idealab.alibaba-inc.com/api/anthropic"
 const DEFAULT_MARKER_STRATEGY = "turn-stable"
 const DEFAULT_ANTHROPIC_CACHE_STRATEGY = "cache"
-const OPENCODE_PROVIDER_ID = "openai-compatible-cached"
+const OPENCODE_PROVIDER_ID = "openai-bailiab-api"
+const OPENCODE_TOKEN_PLAN_PROVIDER_ID = "openai-bailian-token-plan"
 const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-idealab-cached"
-const LEGACY_OPENCODE_PROVIDER_IDS = ["bailian-cache", "bailian-custom-cached", "anthropic-cached"]
+const LEGACY_OPENCODE_PROVIDER_IDS = [
+  "bailian-cache",
+  "bailian-custom-cached",
+  "openai-compatible-cached",
+  "anthropic-cached",
+]
 const QWEN_HOOK_START_NAME = "bailian-cache-proxy-start"
 const QWEN_HOOK_STOP_NAME = "bailian-cache-proxy-stop"
 
@@ -108,9 +116,10 @@ export const buildOpenCodeProvider = ({
   port = DEFAULT_PORT,
   upstreamBaseUrl = DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL,
   markerStrategy = DEFAULT_MARKER_STRATEGY,
+  name = "OpenAI Bailian API cached",
 } = {}) => ({
   npm: "@ai-sdk/openai-compatible",
-  name: "OpenAI-compatible cached",
+  name,
   options: {
     baseURL: `http://127.0.0.1:${port}/compatible-mode/v1`,
     headers: {
@@ -198,6 +207,19 @@ export const configureOpenCodeCacheProxy = async ({
     messages.push(`[provider] ${OPENCODE_PROVIDER_ID} configured`)
   } else {
     messages.push(`[provider] ${OPENCODE_PROVIDER_ID} already up to date`)
+  }
+
+  const desiredTokenPlanProvider = buildOpenCodeProvider({
+    port,
+    upstreamBaseUrl: DEFAULT_OPENAI_BAILIAN_TOKEN_PLAN_UPSTREAM_BASE_URL,
+    markerStrategy,
+    name: "OpenAI Bailian token-plan cached",
+  })
+  if (!jsonEqual(providers[OPENCODE_TOKEN_PLAN_PROVIDER_ID], desiredTokenPlanProvider)) {
+    providers[OPENCODE_TOKEN_PLAN_PROVIDER_ID] = desiredTokenPlanProvider
+    messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_PROVIDER_ID} configured`)
+  } else {
+    messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_PROVIDER_ID} already up to date`)
   }
 
   const desiredAnthropicProvider = buildOpenCodeAnthropicProvider({

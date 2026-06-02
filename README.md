@@ -57,7 +57,26 @@ git clone https://github.com/mhbzhy-lost/opencode-cache-proxy.git
 cd opencode-cache-proxy
 ```
 
-### 2. Configure OpenCode credentials
+### 2. One-command OpenCode install
+
+For a new machine that only needs OpenCode, run:
+
+```bash
+bash install-opencode.sh
+```
+
+The script configures `~/.config/opencode/opencode.json`, adds this repo's
+OpenCode plugin path, and then prompts for provider API keys via OpenCode auth
+storage. Restart OpenCode after the script exits; the plugin starts the proxy
+automatically on the next launch.
+
+For non-interactive verification or CI:
+
+```bash
+bash install-opencode.sh --no-auth
+```
+
+### 3. Configure OpenCode credentials manually
 
 ```bash
 node proxy/bin/bailian-cache-proxy-configure.mjs opencode
@@ -74,7 +93,7 @@ The dynamic upstream override header is honored only for loopback clients; if
 the proxy is bound to a non-local interface, remote clients cannot choose an
 arbitrary upstream URL.
 
-### 3. Configure a client
+### 4. Configure a client
 
 Run the bundled configurator from this repository:
 
@@ -109,13 +128,32 @@ Add a custom provider in your `opencode.json` (usually at
 ```jsonc
 {
   "provider": {
-    "openai-compatible-cached": {
+    "openai-bailiab-api": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "OpenAI-compatible cached",
+      "name": "OpenAI Bailian API cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
         "headers": {
           "x-cache-proxy-upstream-base-url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "x-cache-proxy-marker-strategy": "turn-stable"
+        }
+      },
+      "models": {
+        "qwen3.6-plus":           { "name": "Qwen 3.6 Plus" },
+        "qwen3.6-plus-nothink":   { "name": "Qwen 3.6 Plus (no thinking)" },
+        "qwen3.6-flash":          { "name": "Qwen 3.6 Flash" },
+        "qwen3.6-flash-nothink":  { "name": "Qwen 3.6 Flash (no thinking)" },
+        "qwen3.7-max":            { "name": "Qwen 3.7 Max" },
+        "qwen3.7-max-nothink":    { "name": "Qwen 3.7 Max (no thinking)" }
+      }
+    },
+    "openai-bailian-token-plan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenAI Bailian token-plan cached",
+      "options": {
+        "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
+        "headers": {
+          "x-cache-proxy-upstream-base-url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
           "x-cache-proxy-marker-strategy": "turn-stable"
         }
       },
@@ -157,11 +195,13 @@ Add a custom provider in your `opencode.json` (usually at
 }
 ```
 
-The `baseURL` values point at the local proxy. `openai-compatible-cached` uses
-the OpenAI-compatible chat-completions route; `anthropic-idealab-cached` uses
-the Anthropic Messages route via `@ai-sdk/anthropic` and carries the Idealab
-upstream plus Claude-compatible upstream user-agent in provider headers. Add
-another platform-specific Anthropic provider when another upstream is needed.
+The `baseURL` values point at the local proxy. `openai-bailiab-api` and
+`openai-bailian-token-plan` use the OpenAI-compatible chat-completions route
+with DashScope/Bailian and token-plan upstreams; `anthropic-idealab-cached`
+uses the Anthropic Messages route via `@ai-sdk/anthropic` and carries the
+Idealab upstream plus Claude-compatible upstream user-agent in provider
+headers. Add another platform-specific Anthropic provider when another
+upstream is needed.
 The Opus model defaults to high effort and exposes `low`, `medium`, `high`,
 and `max` OpenCode variants for switching thinking intensity.
 Other OpenCode providers are unaffected.
@@ -220,7 +260,7 @@ upstream path.
 For OpenCode-managed traffic, do not configure provider credentials in
 `proxy/.env`; the production OpenCode path does not load that file.
 
-### 4. Start the proxy
+### 5. Start the proxy
 
 **Option A — OpenCode plugin (recommended).** The plugin auto-starts the proxy
 when OpenCode launches and sends heartbeats to keep it alive. OpenCode exits =

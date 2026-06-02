@@ -19,13 +19,24 @@ unrelated providers and hooks. The OpenCode providers it writes to
 ```json
 {
   "provider": {
-    "openai-compatible-cached": {
+    "openai-bailiab-api": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "OpenAI-compatible cached",
+      "name": "OpenAI Bailian API cached",
       "options": {
         "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
         "headers": {
           "x-cache-proxy-upstream-base-url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "x-cache-proxy-marker-strategy": "turn-stable"
+        }
+      }
+    },
+    "openai-bailian-token-plan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenAI Bailian token-plan cached",
+      "options": {
+        "baseURL": "http://127.0.0.1:48761/compatible-mode/v1",
+        "headers": {
+          "x-cache-proxy-upstream-base-url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
           "x-cache-proxy-marker-strategy": "turn-stable"
         }
       }
@@ -144,7 +155,8 @@ arbitrary upstream forwarder.
 
 ## Thinking Mode Variants
 
-Each Qwen3 model is exposed twice in `openai-compatible-cached`:
+Each Qwen3 model is exposed twice in `openai-bailiab-api` and
+`openai-bailian-token-plan`:
 
 - `qwen3.6-plus` / `qwen3.6-flash` / `qwen3.7-max` — model defaults
   (`enable_thinking=true`, `thinking_budget=max`); model self-adapts depth.

@@ -54,7 +54,8 @@ describe("OpenCode auth bootstrap", () => {
     const configPath = join(dir, "opencode.json")
     await writeFile(configPath, JSON.stringify({
       provider: {
-        "openai-compatible-cached": { name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
+        "openai-bailiab-api": { name: "OpenAI Bailian API cached", npm: "@ai-sdk/openai-compatible" },
+        "openai-bailian-token-plan": { name: "OpenAI Bailian token-plan cached", npm: "@ai-sdk/openai-compatible" },
         "anthropic-idealab-cached": { name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
       },
     }))
@@ -63,7 +64,8 @@ describe("OpenCode auth bootstrap", () => {
 
     assert.deepEqual(choices, [
       { id: "anthropic-idealab-cached", name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
-      { id: "openai-compatible-cached", name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
+      { id: "openai-bailiab-api", name: "OpenAI Bailian API cached", npm: "@ai-sdk/openai-compatible" },
+      { id: "openai-bailian-token-plan", name: "OpenAI Bailian token-plan cached", npm: "@ai-sdk/openai-compatible" },
     ])
 
     await rm(dir, { recursive: true, force: true })
@@ -161,7 +163,8 @@ describe("OpenCode auth bootstrap", () => {
     const authPath = join(dir, "auth.json")
     await writeFile(configPath, JSON.stringify({
       provider: {
-        "openai-compatible-cached": { name: "OpenAI-compatible cached", npm: "@ai-sdk/openai-compatible" },
+        "openai-bailiab-api": { name: "OpenAI Bailian API cached", npm: "@ai-sdk/openai-compatible" },
+        "openai-bailian-token-plan": { name: "OpenAI Bailian token-plan cached", npm: "@ai-sdk/openai-compatible" },
         "anthropic-idealab-cached": { name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
       },
     }))

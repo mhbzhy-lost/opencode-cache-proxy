@@ -41,18 +41,32 @@ describe("client cache proxy configuration", () => {
     const config = await readJson(configPath)
     assert.equal(result.changed, true)
     assert.deepEqual(config.plugin, ["/existing/plugin", join(repoRoot, "plugins")])
+    assert.equal(config.provider["openai-compatible-cached"], undefined)
     assert.equal(
-      config.provider["openai-compatible-cached"].options.baseURL,
+      config.provider["openai-bailiab-api"].options.baseURL,
       "http://127.0.0.1:49876/compatible-mode/v1",
     )
-    assert.equal(config.provider["openai-compatible-cached"].name, "OpenAI-compatible cached")
-    assert.equal(config.provider["openai-compatible-cached"].options.apiKey, undefined)
+    assert.equal(config.provider["openai-bailiab-api"].name, "OpenAI Bailian API cached")
+    assert.equal(config.provider["openai-bailiab-api"].options.apiKey, undefined)
     assert.equal(
-      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      config.provider["openai-bailiab-api"].options.headers["x-cache-proxy-upstream-base-url"],
       "https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
     assert.equal(
-      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-marker-strategy"],
+      config.provider["openai-bailiab-api"].options.headers["x-cache-proxy-marker-strategy"],
+      "turn-stable",
+    )
+    assert.equal(
+      config.provider["openai-bailian-token-plan"].options.baseURL,
+      "http://127.0.0.1:49876/compatible-mode/v1",
+    )
+    assert.equal(config.provider["openai-bailian-token-plan"].name, "OpenAI Bailian token-plan cached")
+    assert.equal(
+      config.provider["openai-bailian-token-plan"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    )
+    assert.equal(
+      config.provider["openai-bailian-token-plan"].options.headers["x-cache-proxy-marker-strategy"],
       "turn-stable",
     )
     assert.equal(config.provider["anthropic-idealab-cached"].npm, "@ai-sdk/anthropic")
@@ -111,7 +125,15 @@ describe("client cache proxy configuration", () => {
       high: { effort: "high" },
       max: { effort: "max" },
     })
-    assert.deepEqual(Object.keys(config.provider["openai-compatible-cached"].models), [
+    assert.deepEqual(Object.keys(config.provider["openai-bailiab-api"].models), [
+      "qwen3.6-plus",
+      "qwen3.6-plus-nothink",
+      "qwen3.6-flash",
+      "qwen3.6-flash-nothink",
+      "qwen3.7-max",
+      "qwen3.7-max-nothink",
+    ])
+    assert.deepEqual(Object.keys(config.provider["openai-bailian-token-plan"].models), [
       "qwen3.6-plus",
       "qwen3.6-plus-nothink",
       "qwen3.6-flash",
@@ -145,11 +167,19 @@ describe("client cache proxy configuration", () => {
 
     assert.equal(result.changed, true)
     assert.equal(
-      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      config.provider["openai-bailiab-api"].options.headers["x-cache-proxy-upstream-base-url"],
       "https://openai.example/v1",
     )
     assert.equal(
-      config.provider["openai-compatible-cached"].options.headers["x-cache-proxy-marker-strategy"],
+      config.provider["openai-bailiab-api"].options.headers["x-cache-proxy-marker-strategy"],
+      "fraction",
+    )
+    assert.equal(
+      config.provider["openai-bailian-token-plan"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    )
+    assert.equal(
+      config.provider["openai-bailian-token-plan"].options.headers["x-cache-proxy-marker-strategy"],
       "fraction",
     )
     assert.equal(
@@ -239,7 +269,8 @@ describe("client cache proxy configuration", () => {
     assert.equal(config.plugin, undefined)
     assert.equal(pluginLink.isSymbolicLink(), true)
     assert.equal(proxyLink.isSymbolicLink(), true)
-    assert.equal(config.provider["openai-compatible-cached"].models["qwen3.7-max"].name, "Qwen 3.7 Max")
+    assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-max"].name, "Qwen 3.7 Max")
+    assert.equal(config.provider["openai-bailian-token-plan"].models["qwen3.7-max"].name, "Qwen 3.7 Max")
 
     await rm(dir, { recursive: true, force: true })
   })
