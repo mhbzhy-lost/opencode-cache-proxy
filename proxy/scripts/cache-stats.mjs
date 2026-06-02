@@ -30,6 +30,8 @@ const args = {
   json: false,
 }
 const validGroupBys = new Set(["model", "status", "protocol", "turn-prev"])
+const TARGET_CACHE_HIT_RATIO = 0.97
+const WARM_HIT_THRESHOLD = 0.5
 const requireValue = (flag, value) => {
   if (value === undefined) {
     console.error(`${flag} requires a value`)
@@ -133,17 +135,28 @@ const filtered =
 const initBucket = () => ({
   count: 0,
   failures: 0,
+  first_seen: null,
+  last_seen: null,
   input_tokens: 0,
   prompt_tokens: 0,
   cache_read_input_tokens: 0,
   cached_tokens: 0,
   cache_creation_input_tokens: 0,
   cache_denominator_tokens: 0,
+  warm_count: 0,
+  warm_cache_read_input_tokens: 0,
+  warm_cache_denominator_tokens: 0,
+  cold_creation_count: 0,
+  cold_creation_input_tokens: 0,
+  target_gap_tokens: 0,
   output_tokens: 0,
   completion_tokens: 0,
   total_duration_ms: 0,
   stream_count: 0,
   stream_usage_seen: 0,
+  context_tokens_total: 0,
+  context_tokens_seen: 0,
+  marker_signatures: new Map(),
 })
 
 const normalizedUsage = (r) => {
@@ -161,14 +174,31 @@ const normalizedUsage = (r) => {
 
 const accumulate = (bucket, r) => {
   const usage = normalizedUsage(r)
+  const hitRatio = usage.cacheDenominator > 0 ? usage.read / usage.cacheDenominator : 0
+  const targetGap = Math.max(0, TARGET_CACHE_HIT_RATIO * usage.cacheDenominator - usage.read)
+  const tsMs = Date.parse(r.ts)
   bucket.count += 1
   if (typeof r.status === "number" && r.status >= 400) bucket.failures += 1
+  if (Number.isFinite(tsMs)) {
+    bucket.first_seen = bucket.first_seen == null ? r.ts : bucket.first_seen
+    bucket.last_seen = r.ts
+  }
   bucket.input_tokens += usage.input
   bucket.prompt_tokens += usage.input
   bucket.cache_read_input_tokens += usage.read
   bucket.cached_tokens += usage.read
   bucket.cache_creation_input_tokens += usage.created
   bucket.cache_denominator_tokens += usage.cacheDenominator
+  if (hitRatio >= WARM_HIT_THRESHOLD) {
+    bucket.warm_count += 1
+    bucket.warm_cache_read_input_tokens += usage.read
+    bucket.warm_cache_denominator_tokens += usage.cacheDenominator
+  }
+  if (hitRatio < WARM_HIT_THRESHOLD && usage.created > 0) {
+    bucket.cold_creation_count += 1
+    bucket.cold_creation_input_tokens += usage.created
+  }
+  bucket.target_gap_tokens += targetGap
   bucket.output_tokens += usage.output
   bucket.completion_tokens += usage.output
   bucket.total_duration_ms += Number(r.duration_ms || 0)
@@ -176,14 +206,53 @@ const accumulate = (bucket, r) => {
     bucket.stream_count += 1
     if (r.stream_usage_seen) bucket.stream_usage_seen += 1
   }
+  const contextTokens = Number(r.cache_diagnostic?.total_estimated_tokens || 0)
+  if (contextTokens > 0) {
+    bucket.context_tokens_total += contextTokens
+    bucket.context_tokens_seen += 1
+  }
+  const signature = markerSignature(r)
+  if (signature) {
+    bucket.marker_signatures.set(signature, (bucket.marker_signatures.get(signature) || 0) + 1)
+  }
 }
 
 const turnPrevKey = (r) =>
   r.cache_diagnostic?.markers?.find((m) => m.location === "turn-prev")?.prefix_hash ||
   "no-turn-prev"
 
+const markerSignature = (r) =>
+  (r.cache_diagnostic?.markers || [])
+    .map((m) => m.location)
+    .filter(Boolean)
+    .join(">")
+
+const topMarkerSignature = (bucket) =>
+  [...bucket.marker_signatures.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null
+
+const timeWindowKey = (r, minutes = 15) => {
+  const d = new Date(r.ts)
+  if (!Number.isFinite(d.getTime())) return "unknown"
+  const minute = Math.floor(d.getUTCMinutes() / minutes) * minutes
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+}
+
+const contextBucketKey = (r) => {
+  const tokens = Number(r.cache_diagnostic?.total_estimated_tokens || 0)
+  if (tokens < 50_000) return "<50k"
+  if (tokens < 100_000) return "50-100k"
+  if (tokens < 200_000) return "100-200k"
+  if (tokens < 300_000) return "200-300k"
+  if (tokens < 500_000) return "300-500k"
+  return ">=500k"
+}
+
 const overall = initBucket()
 const groups = new Map()
+const turnPrevGroups = new Map()
+const markerSignatureGroups = new Map()
+const timeWindowGroups = new Map()
+const contextBucketGroups = new Map()
 
 const groupKeyFor = (r) => {
   if (args.by === "status") return String(r.status ?? "unknown")
@@ -197,6 +266,22 @@ for (const r of filtered) {
   const key = groupKeyFor(r)
   if (!groups.has(key)) groups.set(key, initBucket())
   accumulate(groups.get(key), r)
+
+  const turnPrev = turnPrevKey(r)
+  if (!turnPrevGroups.has(turnPrev)) turnPrevGroups.set(turnPrev, initBucket())
+  accumulate(turnPrevGroups.get(turnPrev), r)
+
+  const signature = markerSignature(r) || "(none)"
+  if (!markerSignatureGroups.has(signature)) markerSignatureGroups.set(signature, initBucket())
+  accumulate(markerSignatureGroups.get(signature), r)
+
+  const windowKey = timeWindowKey(r)
+  if (!timeWindowGroups.has(windowKey)) timeWindowGroups.set(windowKey, initBucket())
+  accumulate(timeWindowGroups.get(windowKey), r)
+
+  const contextKey = contextBucketKey(r)
+  if (!contextBucketGroups.has(contextKey)) contextBucketGroups.set(contextKey, initBucket())
+  accumulate(contextBucketGroups.get(contextKey), r)
 }
 
 const ratio = (numer, denom) =>
@@ -205,6 +290,8 @@ const ratio = (numer, denom) =>
 const summarize = (b) => ({
   requests: b.count,
   failures: b.failures,
+  first_seen: b.first_seen,
+  last_seen: b.last_seen,
   success_rate_pct: ratio(b.count - b.failures, b.count),
   avg_duration_ms: b.count > 0 ? Math.round(b.total_duration_ms / b.count) : 0,
   input_tokens: b.input_tokens,
@@ -215,9 +302,35 @@ const summarize = (b) => ({
   output_tokens: b.output_tokens,
   completion_tokens: b.completion_tokens,
   cache_hit_ratio_pct: ratio(b.cache_read_input_tokens, b.cache_denominator_tokens),
+  target_cache_hit_ratio_pct: TARGET_CACHE_HIT_RATIO * 100,
+  target_gap_tokens: Math.round(b.target_gap_tokens),
+  warm_requests: b.warm_count,
+  warm_cache_hit_ratio_pct: ratio(
+    b.warm_cache_read_input_tokens,
+    b.warm_cache_denominator_tokens,
+  ),
+  cold_creation_requests: b.cold_creation_count,
+  cold_creation_input_tokens: b.cold_creation_input_tokens,
+  cold_creation_pct: ratio(b.cold_creation_input_tokens, b.cache_creation_input_tokens),
+  avg_context_tokens:
+    b.context_tokens_seen > 0 ? Math.round(b.context_tokens_total / b.context_tokens_seen) : 0,
+  marker_signature: topMarkerSignature(b),
   stream_requests: b.stream_count,
   stream_usage_capture_pct: ratio(b.stream_usage_seen, b.stream_count),
 })
+
+const summarizeEntries = (entries, sorter = (a, b) => b[1].count - a[1].count) =>
+  Object.fromEntries(
+    [...entries]
+      .sort(sorter)
+      .map(([k, v]) => [k, summarize(v)]),
+  )
+
+const summarizeTopGap = (entries, limit = 12) =>
+  [...entries]
+    .map(([key, bucket]) => ({ key, ...summarize(bucket) }))
+    .sort((a, b) => b.target_gap_tokens - a.target_gap_tokens)
+    .slice(0, limit)
 
 const result = {
   log_path: logPath,
@@ -226,11 +339,11 @@ const result = {
   records_in_window: filtered.length,
   by: args.by,
   overall: summarize(overall),
-  groups: Object.fromEntries(
-    [...groups.entries()]
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([k, v]) => [k, summarize(v)]),
-  ),
+  groups: summarizeEntries(groups.entries()),
+  top_gap_cohorts: summarizeTopGap(turnPrevGroups.entries()),
+  marker_signatures: summarizeEntries(markerSignatureGroups.entries()),
+  time_windows: summarizeEntries(timeWindowGroups.entries(), (a, b) => a[0].localeCompare(b[0])),
+  context_buckets: summarizeEntries(contextBucketGroups.entries()),
 }
 
 if (args.json) {
@@ -250,9 +363,37 @@ const renderTable = (label, summary) => {
     `cache_creation tokens:    ${fmtNum(summary.cache_creation_input_tokens)}`,
     `completion tokens:        ${fmtNum(summary.completion_tokens)}`,
     `cache hit ratio:          ${summary.cache_hit_ratio_pct}%`,
+    `warm cache hit ratio:     ${summary.warm_cache_hit_ratio_pct}% (${fmtNum(summary.warm_requests)} warm requests)`,
+    `97% gap tokens:           ${fmtNum(summary.target_gap_tokens)}`,
+    `cold creation:            ${fmtNum(summary.cold_creation_input_tokens)} tokens across ${fmtNum(summary.cold_creation_requests)} requests`,
+    `avg context tokens:       ${fmtNum(summary.avg_context_tokens)}`,
+    `marker signature:         ${summary.marker_signature || "(none)"}`,
     `streaming requests:       ${fmtNum(summary.stream_requests)} (${summary.stream_usage_capture_pct}% with usage frame)`,
   ]
   return lines.join("\n")
+}
+
+const renderCompact = (label, entries, limit = 8) => {
+  const rows = Object.entries(entries).slice(0, limit)
+  if (rows.length === 0) return ""
+  return [
+    `--- ${label} ---`,
+    ...rows.map(
+      ([name, summary]) =>
+        `${name}: requests=${fmtNum(summary.requests)}, hit=${summary.cache_hit_ratio_pct}%, warm=${summary.warm_cache_hit_ratio_pct}%, gap=${fmtNum(summary.target_gap_tokens)}, cold_creation=${fmtNum(summary.cold_creation_input_tokens)}, signature=${summary.marker_signature || "(none)"}`,
+    ),
+  ].join("\n")
+}
+
+const renderTopGap = (entries, limit = 8) => {
+  if (entries.length === 0) return ""
+  return [
+    "--- TOP 97% GAP COHORTS ---",
+    ...entries.slice(0, limit).map(
+      (summary) =>
+        `${summary.key}: requests=${fmtNum(summary.requests)}, hit=${summary.cache_hit_ratio_pct}%, warm=${summary.warm_cache_hit_ratio_pct}%, gap=${fmtNum(summary.target_gap_tokens)}, cold_creation=${fmtNum(summary.cold_creation_input_tokens)}, signature=${summary.marker_signature || "(none)"}`,
+    ),
+  ].join("\n")
 }
 
 console.log(`log:               ${result.log_path}`)
@@ -266,3 +407,10 @@ for (const [name, summary] of Object.entries(result.groups)) {
   console.log(renderTable(`${groupHeader}: ${name}`, summary))
   console.log()
 }
+console.log(renderTopGap(result.top_gap_cohorts))
+console.log()
+console.log(renderCompact("BY MARKER SIGNATURE", result.marker_signatures))
+console.log()
+console.log(renderCompact("BY TIME WINDOW", result.time_windows))
+console.log()
+console.log(renderCompact("BY CONTEXT BUCKET", result.context_buckets))
