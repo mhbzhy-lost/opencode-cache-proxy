@@ -14,8 +14,6 @@ describe("BailianCacheProxyPlugin", () => {
       spawnImpl: () => child,
       fetchImpl: async () => ({ ok: false }),
       sleep: async () => {},
-      maxHeartbeatAttempts: 0,
-      setIntervalImpl: () => ({ unref() {} }),
     })
 
     await plugin({
@@ -32,21 +30,18 @@ describe("BailianCacheProxyPlugin", () => {
     assert.equal(logs.some((entry) => entry.level === "error" && /node missing/.test(entry.message)), true)
   })
 
-  test("logs periodic heartbeat failures", async () => {
+  test("starts the proxy when health check fails without registering a pid", async () => {
     const logs = []
-    let intervalCallback
-    let requestCount = 0
+    const requests = []
+    const spawns = []
     const plugin = createBailianCacheProxyPlugin({
-      fetchImpl: async () => {
-        requestCount += 1
-        if (requestCount === 1) return { ok: true }
-        throw new Error("connection refused")
+      fetchImpl: async (url, init = {}) => {
+        requests.push({ url, init })
+        return { ok: false }
       },
-      sleep: async () => {},
-      maxHeartbeatAttempts: 0,
-      setIntervalImpl: (callback) => {
-        intervalCallback = callback
-        return { unref() {} }
+      spawnImpl: (command, args, options) => {
+        spawns.push({ command, args, options })
+        return { on() {}, unref() {} }
       },
     })
 
@@ -57,9 +52,38 @@ describe("BailianCacheProxyPlugin", () => {
         },
       },
     })
-    await intervalCallback()
 
-    assert.equal(logs.some((entry) => entry.level === "warn" && /heartbeat failed/.test(entry.message)), true)
-    assert.equal(logs.some((entry) => /connection refused/.test(JSON.stringify(entry.extra))), true)
+    assert.equal(requests.length, 1)
+    assert.match(requests[0].url, /\/health$/)
+    assert.equal(spawns.length, 1)
+    assert.equal(spawns[0].options.env.BAILIAN_CACHE_PROXY_IDLE_EXIT_MS, "0")
+    assert.equal(logs.some((entry) => entry.level === "info" && /proxy ensured/.test(entry.message)), true)
+  })
+
+  test("does not start a duplicate proxy when health check succeeds", async () => {
+    const requests = []
+    const spawns = []
+    const plugin = createBailianCacheProxyPlugin({
+      fetchImpl: async (url, init = {}) => {
+        requests.push({ url, init })
+        return { ok: true }
+      },
+      spawnImpl: (...args) => {
+        spawns.push(args)
+        return { on() {}, unref() {} }
+      },
+    })
+
+    await plugin({
+      client: {
+        app: {
+          log: async () => {},
+        },
+      },
+    })
+
+    assert.equal(requests.length, 1)
+    assert.match(requests[0].url, /\/health$/)
+    assert.equal(spawns.length, 0)
   })
 })

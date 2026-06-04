@@ -123,13 +123,13 @@ onto the configured upstream base path.
 ## Lifecycle
 
 The `plugins/bailian-cache-proxy.js` plugin starts the proxy if it is
-not already running and sends periodic heartbeats with the current OpenCode
-process pid. For Qwen Code, use
-`bin/bailian-cache-proxy-qwen-hook.mjs start` on `SessionStart` and
-`bin/bailian-cache-proxy-qwen-hook.mjs stop` on `SessionEnd`; the start command
-spawns a per-session keepalive process that sends the same heartbeat protocol.
-The proxy exits after all registered client pids are gone and the idle timeout
-elapses.
+not already running. Qwen Code uses the same lifecycle policy through
+`bin/bailian-cache-proxy-qwen-hook.mjs start` on `SessionStart`.
+Both managed entrypoints start at most one local proxy process by checking the
+health endpoint first, and they set `BAILIAN_CACHE_PROXY_IDLE_EXIT_MS=0` for
+the child process so the proxy is not tied to a short-lived plugin runtime.
+`SessionEnd` may still call the Qwen hook with `stop`, but that command is a
+no-op because proxy lifecycle is shared across clients.
 
 ## Runtime Environment
 

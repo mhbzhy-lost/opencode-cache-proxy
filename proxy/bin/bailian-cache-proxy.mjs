@@ -49,7 +49,7 @@ const anthropicHandler = createAnthropicHandler({
 })
 
 const { server } = createBailianCacheProxy({
-  idleExitMs: envNumber("BAILIAN_CACHE_PROXY_IDLE_EXIT_MS", 60_000),
+  idleExitMs: envNumber("BAILIAN_CACHE_PROXY_IDLE_EXIT_MS", 0),
   lifecycleCheckMs: envNumber("BAILIAN_CACHE_PROXY_LIFECYCLE_CHECK_MS", 5_000),
   maxBodyBytes: envNumber("BAILIAN_CACHE_PROXY_MAX_BODY_BYTES", 10 * 1024 * 1024),
   cacheOptions: {

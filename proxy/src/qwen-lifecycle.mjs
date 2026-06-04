@@ -1,47 +1,18 @@
 import { spawn } from "node:child_process"
-import { createHash } from "node:crypto"
 import { closeSync, openSync } from "node:fs"
-import { mkdir, open, readFile, unlink, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const DEFAULT_PROXY_PORT = "48761"
 const DEFAULT_STARTUP_ATTEMPTS = 20
 const DEFAULT_STARTUP_POLL_MS = 250
-const DEFAULT_KEEPALIVE_MS = 15_000
 const DISABLED_VALUES = new Set(["0", "false", "no", "off"])
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_PROXY_ENTRY = join(here, "..", "bin", "bailian-cache-proxy.mjs")
-const DEFAULT_QWEN_HOOK_ENTRY = join(here, "..", "bin", "bailian-cache-proxy-qwen-hook.mjs")
 
 const isDisabled = (env) =>
   DISABLED_VALUES.has(String(env.QWEN_BAILIAN_CACHE_PROXY || "").trim().toLowerCase())
-
-const envNumber = (env, name, fallback) => {
-  const raw = env[name]
-  if (!raw) return fallback
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
-const defaultStateDir = (env = process.env) =>
-  env.BAILIAN_CACHE_PROXY_STATE_DIR ||
-  join(env.XDG_RUNTIME_DIR || env.TMPDIR || tmpdir(), "bailian-cache-proxy")
-
-export const qwenSessionKey = (hookInput = {}) => {
-  const raw =
-    hookInput.session_id ||
-    hookInput.transcript_path ||
-    hookInput.cwd ||
-    hookInput.source ||
-    "default"
-  return createHash("sha256").update(String(raw)).digest("hex").slice(0, 16)
-}
-
-export const qwenPidFilePath = ({ hookInput = {}, stateDir = defaultStateDir() } = {}) =>
-  join(stateDir, `qwen-${qwenSessionKey(hookInput)}.pid`)
 
 export const proxyBaseUrl = (env = process.env) => {
   const host = env.BAILIAN_CACHE_PROXY_HOST || "127.0.0.1"
@@ -55,48 +26,6 @@ export const healthCheck = async ({ fetchImpl = fetch, env = process.env } = {})
     return response.ok
   } catch {
     return false
-  }
-}
-
-export const sendHeartbeat = async ({
-  fetchImpl = fetch,
-  env = process.env,
-  pid = process.pid,
-} = {}) => {
-  const response = await fetchImpl(`${proxyBaseUrl(env)}/__bailian_cache_proxy/heartbeat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ pid }),
-  })
-  return response.ok
-}
-
-export const pidIsAlive = (pid, killImpl = process.kill) => {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false
-  try {
-    killImpl(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-const readPidFile = async (pidFile) => {
-  try {
-    const raw = await readFile(pidFile, "utf8")
-    const pid = Number(raw.trim())
-    return Number.isSafeInteger(pid) && pid > 0 ? pid : null
-  } catch {
-    return null
-  }
-}
-
-const acquireStartLock = async (lockFile, openImpl = open) => {
-  try {
-    return await openImpl(lockFile, "wx")
-  } catch (err) {
-    if (err?.code === "EEXIST") return null
-    throw err
   }
 }
 
@@ -162,7 +91,10 @@ export const startProxyProcess = ({
     child = spawnImpl(nodeBin, [proxyEntry], {
       detached: true,
       stdio: childStdio,
-      env,
+      env: {
+        ...env,
+        BAILIAN_CACHE_PROXY_IDLE_EXIT_MS: env.BAILIAN_CACHE_PROXY_IDLE_EXIT_MS || "0",
+      },
     })
   } finally {
     closeStderrLogFile(stderrLogFd)
@@ -218,165 +150,33 @@ export const ensureProxyRunning = async ({
 }
 
 export const startQwenKeepalive = async ({
-  hookInput = {},
-  stateDir = defaultStateDir(),
   env = process.env,
   fetchImpl = fetch,
   spawnImpl = spawn,
-  killImpl = process.kill,
   nodeBin = process.execPath,
   proxyEntry = DEFAULT_PROXY_ENTRY,
-  keepaliveEntry = DEFAULT_QWEN_HOOK_ENTRY,
   logger = console,
   sleep,
   startupAttempts,
   startupPollMs,
-  writePidFileImpl = writeFile,
-  openLockFileImpl = open,
 } = {}) => {
-  const pidFile = qwenPidFilePath({ hookInput, stateDir })
-  if (isDisabled(env)) return { status: "disabled", pidFile }
-
-  const existingPid = await readPidFile(pidFile)
-  if (pidIsAlive(existingPid, killImpl)) {
-    return { status: "already-running", pid: existingPid, pidFile }
-  }
-
-  await mkdir(dirname(pidFile), { recursive: true })
-  const stderrLogPath = join(dirname(pidFile), "qwen-cache-proxy.stderr.log")
-  const lockFile = `${pidFile}.lock`
-  const lockHandle = await acquireStartLock(lockFile, openLockFileImpl)
-  if (!lockHandle) {
-    return { status: "starting", pid: null, pidFile }
-  }
-
-  try {
-    await ensureProxyRunning({
-      fetchImpl,
-      spawnImpl,
-      nodeBin,
-      proxyEntry,
-      env,
-      logger,
-      sleep,
-      startupAttempts,
-      startupPollMs,
-      stdio: ["ignore", "ignore", "ignore"],
-      logStderr: false,
-      stderrLogPath,
-    })
-
-    const stderrLogFd = openStderrLogFile(stderrLogPath, logger)
-    let child
-    try {
-      child = spawnImpl(nodeBin, [keepaliveEntry, "keepalive", "--pid-file", pidFile], {
-        detached: true,
-        stdio: ["ignore", "ignore", stderrLogFd ?? "ignore"],
-        env,
-      })
-    } finally {
-      closeStderrLogFile(stderrLogFd)
-    }
-    attachChildLogging(child, logger, { logStderr: false })
-    child.unref?.()
-
-    const pid = child.pid ?? null
-    if (pid) {
-      try {
-        await writePidFileImpl(pidFile, `${pid}\n`)
-      } catch (err) {
-        try {
-          killImpl(pid, "SIGTERM")
-        } catch {
-          // The child may have exited between spawn and rollback.
-        }
-        throw err
-      }
-    }
-    return { status: "started", pid, pidFile }
-  } finally {
-    await Promise.resolve(lockHandle.close?.()).catch(() => {})
-    await unlink(lockFile).catch(() => {})
-  }
-}
-
-export const stopQwenKeepalive = async ({
-  hookInput = {},
-  stateDir = defaultStateDir(),
-  killImpl = process.kill,
-} = {}) => {
-  const pidFile = qwenPidFilePath({ hookInput, stateDir })
-  const pid = await readPidFile(pidFile)
-  if (pid) {
-    try {
-      killImpl(pid, "SIGTERM")
-    } catch {
-      // Stale pidfiles should not make SessionEnd fail.
-    }
-  }
-  await unlink(pidFile).catch(() => {})
-  return { status: pid ? "stopped" : "not-running", pid, pidFile }
-}
-
-export const runQwenKeepalive = async ({
-  pidFile,
-  env = process.env,
-  fetchImpl = fetch,
-  spawnImpl = spawn,
-  nodeBin = process.execPath,
-  proxyEntry = DEFAULT_PROXY_ENTRY,
-  logger = console,
-  intervalMs = envNumber(env, "QWEN_BAILIAN_CACHE_PROXY_HEARTBEAT_MS", DEFAULT_KEEPALIVE_MS),
-  setIntervalImpl = setInterval,
-  clearIntervalImpl = clearInterval,
-  signalTarget = process,
-  unlinkImpl = unlink,
-  once = false,
-} = {}) => {
-  if (!pidFile) throw new Error("--pid-file is required")
-  await mkdir(dirname(pidFile), { recursive: true })
-  await writeFile(pidFile, `${process.pid}\n`)
-
-  const beat = async () => {
-    try {
-      await ensureProxyRunning({ fetchImpl, spawnImpl, nodeBin, proxyEntry, env, logger })
-      await sendHeartbeat({ fetchImpl, env, pid: process.pid })
-    } catch (err) {
-      logger.warn?.(`bailian-cache-proxy qwen keepalive failed: ${err.message || err}`)
-    }
-  }
-
-  let isBeating = false
-  const scheduleBeat = async () => {
-    if (isBeating) return
-    isBeating = true
-    try {
-      await beat()
-    } finally {
-      isBeating = false
-    }
-  }
-
-  await scheduleBeat()
-  if (once) return
-
-  await new Promise((resolve) => {
-    const timer = setIntervalImpl(() => {
-      void scheduleBeat()
-    }, intervalMs)
-
-    let finished = false
-    const finish = () => {
-      if (finished) return
-      finished = true
-      clearIntervalImpl(timer)
-      void unlinkImpl(pidFile).catch(() => {}).finally(resolve)
-    }
-
-    signalTarget.once("SIGTERM", finish)
-    signalTarget.once("SIGINT", finish)
+  if (isDisabled(env)) return { status: "disabled" }
+  return ensureProxyRunning({
+    fetchImpl,
+    spawnImpl,
+    nodeBin,
+    proxyEntry,
+    env,
+    logger,
+    sleep,
+    startupAttempts,
+    startupPollMs,
+    stdio: ["ignore", "ignore", "ignore"],
+    logStderr: false,
   })
 }
+
+export const stopQwenKeepalive = async () => ({ status: "noop" })
 
 export const parseHookInput = (raw, logger = console) => {
   if (!raw) return {}
@@ -387,10 +187,4 @@ export const parseHookInput = (raw, logger = console) => {
     logger.warn?.(`bailian-cache-proxy qwen hook: invalid hook JSON (${err.message || err})`)
     return {}
   }
-}
-
-export const parsePidFileArg = (argv) => {
-  const idx = argv.indexOf("--pid-file")
-  if (idx === -1 || !argv[idx + 1]) return null
-  return argv[idx + 1]
 }

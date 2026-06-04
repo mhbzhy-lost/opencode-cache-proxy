@@ -6,8 +6,6 @@ import { fileURLToPath } from "node:url"
 import { loadEnvFile } from "../src/load-env.mjs"
 import {
   parseHookInput,
-  parsePidFileArg,
-  runQwenKeepalive,
   startQwenKeepalive,
   stopQwenKeepalive,
 } from "../src/qwen-lifecycle.mjs"
@@ -39,11 +37,6 @@ const readStdin = async (maxBytes = envNumber("QWEN_BAILIAN_CACHE_PROXY_MAX_STDI
 const main = async () => {
   const command = process.argv[2] || "start"
 
-  if (command === "keepalive") {
-    await runQwenKeepalive({ pidFile: parsePidFileArg(process.argv.slice(3)) })
-    return
-  }
-
   const hookInput = parseHookInput(await readStdin())
   if (command === "start") {
     await startQwenKeepalive({ hookInput })
@@ -55,7 +48,7 @@ const main = async () => {
   }
 
   process.stderr.write(
-    "bailian-cache-proxy-qwen-hook: expected command start, stop, or keepalive\n",
+    "bailian-cache-proxy-qwen-hook: expected command start or stop\n",
   )
   process.exitCode = 2
 }

@@ -11,7 +11,6 @@ import { fileURLToPath } from "node:url"
 
 const disabledValues = new Set(["0", "false", "no", "off"])
 const defaultPort = "48761"
-const heartbeatMs = 15_000
 
 const isDisabled = () =>
   disabledValues.has(String(process.env.OPENCODE_BAILIAN_CACHE_PROXY || "").trim().toLowerCase())
@@ -46,15 +45,6 @@ const healthCheck = async (fetchImpl = fetch) => {
   }
 }
 
-const heartbeat = async (fetchImpl = fetch) => {
-  const response = await fetchImpl(`${proxyBaseUrl()}/__bailian_cache_proxy/heartbeat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ pid: process.pid }),
-  })
-  return response.ok
-}
-
 const startProxy = ({ client, spawnImpl = spawn }) => {
   const proxyEntry = join(
     dirname(fileURLToPath(import.meta.url)),
@@ -67,7 +57,10 @@ const startProxy = ({ client, spawnImpl = spawn }) => {
   const child = spawnImpl(nodeBin, [proxyEntry], {
     detached: true,
     stdio: ["ignore", "ignore", "pipe"],
-    env: process.env,
+    env: {
+      ...process.env,
+      BAILIAN_CACHE_PROXY_IDLE_EXIT_MS: process.env.BAILIAN_CACHE_PROXY_IDLE_EXIT_MS || "0",
+    },
   })
   child.on("error", (err) => {
     log(client, "error", `failed to start proxy: ${err.message}`)
@@ -81,9 +74,6 @@ const startProxy = ({ client, spawnImpl = spawn }) => {
 export const createBailianCacheProxyPlugin = ({
   fetchImpl = fetch,
   spawnImpl = spawn,
-  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  setIntervalImpl = setInterval,
-  maxHeartbeatAttempts = 20,
 } = {}) => async ({ client }) => {
   if (isDisabled()) {
     await log(client, "info", "disabled by OPENCODE_BAILIAN_CACHE_PROXY")
@@ -94,24 +84,7 @@ export const createBailianCacheProxyPlugin = ({
     startProxy({ client, spawnImpl })
   }
 
-  let attempts = 0
-  while (attempts < maxHeartbeatAttempts) {
-    attempts += 1
-    if (await heartbeat(fetchImpl)) break
-    await sleep(250)
-  }
-
-  const timer = setIntervalImpl(async () => {
-    try {
-      await heartbeat(fetchImpl)
-    } catch (err) {
-      log(client, "warn", "heartbeat failed", { error: err.message })
-    }
-  }, heartbeatMs)
-  timer.unref?.()
-
-  await log(client, "info", "heartbeat registered", {
-    pid: process.pid,
+  await log(client, "info", "proxy ensured", {
     baseUrl: proxyBaseUrl(),
   })
 

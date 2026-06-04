@@ -32,6 +32,12 @@ export const createLifecycleTracker = ({
       }
       parents.set(pid, now())
     },
+    unregister(pid) {
+      if (!Number.isSafeInteger(pid) || pid <= 0) {
+        throw new Error(`invalid pid: ${pid}`)
+      }
+      parents.delete(pid)
+    },
     prune,
     hasActiveParents() {
       prune()

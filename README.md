@@ -33,7 +33,7 @@ proxy/
   scripts/    CLI tools (cache-stats, e2e)
   .env.example  Deprecated for the OpenCode-managed path
 plugins/
-  bailian-cache-proxy.js    OpenCode plugin (auto-start + heartbeat)
+  bailian-cache-proxy.js    OpenCode plugin (auto-start local proxy singleton)
 ```
 
 ## Prerequisites
@@ -262,9 +262,11 @@ For OpenCode-managed traffic, do not configure provider credentials in
 
 ### 5. Start the proxy
 
-**Option A — OpenCode plugin (recommended).** The plugin auto-starts the proxy
-when OpenCode launches and sends heartbeats to keep it alive. OpenCode exits =
-proxy exits after idle timeout.
+**Option A — OpenCode plugin (recommended).** The plugin checks the local
+health endpoint when OpenCode launches. If the proxy is not already running,
+it starts one detached local proxy process and disables that child process's
+idle exit. Repeated OpenCode launches do not start duplicate proxies because
+the health check succeeds once the singleton is listening.
 
 OpenCode loads plugins from a directory. Point your plugin path to
 `<repo-root>/plugins/`:
@@ -281,12 +283,12 @@ Verify:
 
 ```bash
 curl -s http://127.0.0.1:48761/__bailian_cache_proxy/health
-# {"ok":true,"activePids":[...]}
+# {"ok":true,"activePids":[]}
 ```
 
-**Option B — Qwen Code hooks.** Add SessionStart and SessionEnd hooks that call
-the helper. SessionStart starts the proxy if needed and spawns a per-session
-keepalive process; SessionEnd stops that keepalive so the proxy can idle-exit.
+**Option B — Qwen Code hooks.** Add a SessionStart hook that calls the same
+local proxy ensure helper. SessionEnd is optional and currently a no-op because
+proxy lifecycle is shared across clients.
 
 ```jsonc
 // ~/.qwen/settings.json
@@ -331,13 +333,11 @@ node proxy/bin/bailian-cache-proxy.mjs
 curl -s http://127.0.0.1:48761/__bailian_cache_proxy/health
 ```
 
-Without heartbeats the proxy exits after `BAILIAN_CACHE_PROXY_IDLE_EXIT_MS`
-(default 60s). Send manual heartbeats:
+Manual starts also keep the proxy running by default. To make a manual debug
+proxy exit after an idle window, set a positive timeout:
 
 ```bash
-curl -s -X POST http://127.0.0.1:48761/__bailian_cache_proxy/heartbeat \
-  -H 'content-type: application/json' \
-  -d "{\"pid\": $$}"
+BAILIAN_CACHE_PROXY_IDLE_EXIT_MS=60000 node proxy/bin/bailian-cache-proxy.mjs
 ```
 
 ## Thinking Mode Variants
@@ -400,7 +400,7 @@ jq -c 'select(.status >= 400)' "$LOG"
 | `BAILIAN_CACHE_PROXY_MIN_TOKENS` | `1024` | Min prefix tokens before adding cache markers |
 | `BAILIAN_CACHE_PROXY_MAX_BODY_BYTES` | `10485760` | Max request body size |
 | `BAILIAN_CACHE_PROXY_USAGE_LOG` | `~/.cache/bailian-cache-proxy/usage.jsonl` | Usage log path |
-| `BAILIAN_CACHE_PROXY_IDLE_EXIT_MS` | `60000` | Idle timeout after all pids gone |
+| `BAILIAN_CACHE_PROXY_IDLE_EXIT_MS` | `0` | Idle timeout; `0` disables proxy idle exit |
 | `OPENCODE_BAILIAN_CACHE_PROXY` | — | Set `0` to disable plugin proxy startup |
 | `QWEN_BAILIAN_CACHE_PROXY` | — | Set `0` to disable Qwen hook proxy startup |
 

@@ -20,6 +20,35 @@ describe("createLifecycleTracker", () => {
     assert.deepEqual(tracker.activePids(), [202])
   })
 
+  test("register is idempotent per pid and unregister removes only that pid", () => {
+    const tracker = createLifecycleTracker({
+      now: () => 1_000,
+      pidIsAlive: () => true,
+    })
+
+    tracker.register(101)
+    tracker.register(101)
+    tracker.register(202)
+    tracker.unregister(101)
+
+    assert.equal(tracker.hasActiveParents(), true)
+    assert.deepEqual(tracker.activePids(), [202])
+  })
+
+  test("unregister accepts repeated cleanup for already removed pids", () => {
+    const tracker = createLifecycleTracker({
+      now: () => 1_000,
+      pidIsAlive: () => true,
+    })
+
+    tracker.register(101)
+    tracker.unregister(101)
+    tracker.unregister(101)
+
+    assert.equal(tracker.hasActiveParents(), false)
+    assert.deepEqual(tracker.activePids(), [])
+  })
+
   test("drops stale or exited opencode pids", () => {
     let clock = 1_000
     const live = new Set([303])

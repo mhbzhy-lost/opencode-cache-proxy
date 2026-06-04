@@ -63,6 +63,86 @@ const mockResponse = () => {
 }
 
 describe("createBailianCacheProxy", () => {
+  test("default lifecycle does not idle-exit the proxy", async () => {
+    let idleExitCalled = false
+    let closed = false
+    const proxy = createBailianCacheProxy({
+      lifecycleCheckMs: 10,
+      onIdleExit: () => {
+        idleExitCalled = true
+      },
+    })
+    proxy.server.on("close", () => {
+      closed = true
+    })
+    await listen(proxy.server)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      assert.equal(idleExitCalled, false)
+      assert.equal(closed, false)
+    } finally {
+      if (!closed) await close(proxy.server)
+    }
+  })
+
+  test("idleExitMs=0 disables lifecycle idle exit", async () => {
+    let idleExitCalled = false
+    let closed = false
+    const proxy = createBailianCacheProxy({
+      idleExitMs: 0,
+      lifecycleCheckMs: 10,
+      onIdleExit: () => {
+        idleExitCalled = true
+      },
+    })
+    proxy.server.on("close", () => {
+      closed = true
+    })
+    await listen(proxy.server)
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      assert.equal(idleExitCalled, false)
+      assert.equal(closed, false)
+    } finally {
+      if (!closed) await close(proxy.server)
+    }
+  })
+
+  test("registers and unregisters OpenCode pids through lifecycle control endpoints", async () => {
+    const proxy = createBailianCacheProxy({ lifecycle: false })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      const register = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/__bailian_cache_proxy/register`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ pid: process.pid }),
+        },
+      )
+      assert.equal(register.status, 200)
+      const registered = await register.json()
+      assert.deepEqual(registered.activePids, [process.pid])
+
+      const unregister = await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/__bailian_cache_proxy/unregister`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ pid: process.pid }),
+        },
+      )
+      assert.equal(unregister.status, 200)
+      const unregistered = await unregister.json()
+      assert.deepEqual(unregistered.activePids, [])
+    } finally {
+      await close(proxy.server)
+    }
+  })
+
   test("injects cache markers and forwards authorization to Bailian upstream", async () => {
     let received
     const upstream = createServer(async (request, response) => {

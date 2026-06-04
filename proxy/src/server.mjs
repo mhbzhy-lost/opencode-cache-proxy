@@ -11,7 +11,7 @@ import { ensureStreamUsageOption, extractUsage } from "./usage-extractor.mjs"
 import { buildUsageRecord, createUsageRecorder } from "./usage-recorder.mjs"
 
 const DEFAULT_UPSTREAM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-const DEFAULT_IDLE_EXIT_MS = 60_000
+const DEFAULT_IDLE_EXIT_MS = 0
 const DEFAULT_LIFECYCLE_CHECK_MS = 5_000
 const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024
 // Cap how many response bytes we retain for usage extraction. SSE usage frames
@@ -134,7 +134,7 @@ const forwardHeaders = (requestHeaders, bodyLength, apiKey) => {
   return headers
 }
 
-const handleHeartbeat = async (request, response, tracker) => {
+const handleLifecyclePid = async (request, response, tracker, action) => {
   if (request.method !== "POST") {
     writeJson(response, 405, { error: "method_not_allowed" })
     return
@@ -142,10 +142,14 @@ const handleHeartbeat = async (request, response, tracker) => {
 
   try {
     const body = JSON.parse((await readBody(request)).toString("utf8"))
-    tracker.register(body.pid)
+    if (action === "unregister") {
+      tracker.unregister(body.pid)
+    } else {
+      tracker.register(body.pid)
+    }
     writeJson(response, 200, { ok: true, activePids: tracker.activePids() })
   } catch (err) {
-    writeJson(response, 400, { error: "invalid_heartbeat", message: String(err.message || err) })
+    writeJson(response, 400, { error: "invalid_lifecycle_pid", message: String(err.message || err) })
   }
 }
 
@@ -218,8 +222,14 @@ export const createBailianCacheProxy = ({
       return
     }
 
-    if (requestPath === `${CONTROL_PREFIX}/heartbeat`) {
-      await handleHeartbeat(request, response, tracker)
+    if (requestPath === `${CONTROL_PREFIX}/register` || requestPath === `${CONTROL_PREFIX}/heartbeat`) {
+      await handleLifecyclePid(request, response, tracker, "register")
+      lastActiveAt = Date.now()
+      return
+    }
+
+    if (requestPath === `${CONTROL_PREFIX}/unregister`) {
+      await handleLifecyclePid(request, response, tracker, "unregister")
       lastActiveAt = Date.now()
       return
     }
@@ -396,7 +406,7 @@ export const createBailianCacheProxy = ({
     }
   })
 
-  if (lifecycle) {
+  if (lifecycle && idleExitMs > 0) {
     lifecycleTimer = setInterval(() => {
       if (tracker.hasActiveParents()) {
         lastActiveAt = Date.now()
