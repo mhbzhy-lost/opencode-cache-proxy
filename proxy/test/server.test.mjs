@@ -996,6 +996,52 @@ describe("createBailianCacheProxy", () => {
     }
   })
 
+  test("rewrites qwen3.7-max context aliases to the upstream model", async () => {
+    let receivedBody
+    const upstream = createServer(async (request, response) => {
+      receivedBody = await readJson(request)
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ id: "chatcmpl-qwen-context", model: "qwen3.7-max", usage: {} }))
+    })
+    const upstreamAddress = await listen(upstream)
+    const records = []
+    const proxy = createBailianCacheProxy({
+      upstreamBaseUrl: `http://127.0.0.1:${upstreamAddress.port}/compatible-mode/v1`,
+      lifecycle: false,
+      usageRecorder: {
+        fireAndForget: (entry) => records.push(entry),
+        record: async () => {},
+        filePath: "<test>",
+      },
+    })
+    const proxyAddress = await listen(proxy.server)
+
+    try {
+      await fetch(
+        `http://127.0.0.1:${proxyAddress.port}/compatible-mode/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "qwen3.7-max-512k",
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        },
+      )
+
+      assert.equal(receivedBody.model, "qwen3.7-max")
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(receivedBody, "enable_thinking"),
+        false,
+        "must NOT inject enable_thinking for context-only aliases",
+      )
+      assert.equal(records[0].model, "qwen3.7-max-512k")
+    } finally {
+      await close(proxy.server)
+      await close(upstream)
+    }
+  })
+
   test("NOOP_USAGE_RECORDER is frozen and never throws", () => {
     // The exported no-op must be safe to share across the whole test suite
     // and any future caller that doesn't want stats persisted.

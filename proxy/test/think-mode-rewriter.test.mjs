@@ -47,6 +47,13 @@ describe("resolveThinkMode", () => {
     assert.equal(r.upstreamModel, "qwen3.6-flash")
     assert.equal(r.enableThinking, null)
   })
+
+  test("qwen3.7-max context aliases rewrite to the upstream model", () => {
+    const r = resolveThinkMode("qwen3.7-max-512k")
+    assert.equal(r.upstreamModel, "qwen3.7-max")
+    assert.equal(r.enableThinking, null)
+    assert.equal(r.alias, "qwen3.7-max-512k")
+  })
 })
 
 describe("applyThinkModeRewrite", () => {
@@ -98,6 +105,19 @@ describe("applyThinkModeRewrite", () => {
     assert.equal(out.stream, true)
     assert.deepEqual(out.stream_options, { include_usage: true })
     assert.equal(out.messages.length, 2)
+  })
+
+  test("rewrites qwen3.7-max context aliases without changing thinking mode", () => {
+    const body = {
+      model: "qwen3.7-max-1m",
+      enable_thinking: true,
+      messages: [{ role: "user", content: "hi" }],
+    }
+    const { body: out, alias } = applyThinkModeRewrite(body)
+    assert.notEqual(out, body, "must clone")
+    assert.equal(out.model, "qwen3.7-max")
+    assert.equal(out.enable_thinking, true)
+    assert.equal(alias, "qwen3.7-max-1m")
   })
 
   test("non-object body returns as-is", () => {

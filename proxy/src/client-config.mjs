@@ -48,6 +48,17 @@ const QWEN_MODEL_NAMES = {
   "qwen3.7-max": "Qwen 3.7 Max (cached)",
 }
 
+const QWEN_OPEN_CODE_MODELS = {
+  "qwen3.6-plus": { name: "Qwen 3.6 Plus" },
+  "qwen3.6-plus-nothink": { name: "Qwen 3.6 Plus (no thinking)" },
+  "qwen3.6-flash": { name: "Qwen 3.6 Flash" },
+  "qwen3.6-flash-nothink": { name: "Qwen 3.6 Flash (no thinking)" },
+  "qwen3.7-max": { name: "Qwen 3.7 Max" },
+  "qwen3.7-max-512k": { name: "Qwen 3.7 Max (512k)", limit: { context: 512000, output: 65536 } },
+  "qwen3.7-max-1m": { name: "Qwen 3.7 Max (1M)", limit: { context: 1000000, output: 65536 } },
+  "qwen3.7-max-nothink": { name: "Qwen 3.7 Max (no thinking)" },
+}
+
 export const defaultOpenCodeConfigPath = (env = process.env) =>
   join(env.OPENCODE_CONFIG_DIR || join(homedir(), ".config", "opencode"), "opencode.json")
 
@@ -127,14 +138,7 @@ export const buildOpenCodeProvider = ({
       "x-cache-proxy-marker-strategy": markerStrategy,
     },
   },
-  models: {
-    "qwen3.6-plus": { name: "Qwen 3.6 Plus" },
-    "qwen3.6-plus-nothink": { name: "Qwen 3.6 Plus (no thinking)" },
-    "qwen3.6-flash": { name: "Qwen 3.6 Flash" },
-    "qwen3.6-flash-nothink": { name: "Qwen 3.6 Flash (no thinking)" },
-    "qwen3.7-max": { name: "Qwen 3.7 Max" },
-    "qwen3.7-max-nothink": { name: "Qwen 3.7 Max (no thinking)" },
-  },
+  models: QWEN_OPEN_CODE_MODELS,
 })
 
 export const buildOpenCodeAnthropicProvider = ({

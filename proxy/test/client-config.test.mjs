@@ -131,6 +131,8 @@ describe("client cache proxy configuration", () => {
       "qwen3.6-flash",
       "qwen3.6-flash-nothink",
       "qwen3.7-max",
+      "qwen3.7-max-512k",
+      "qwen3.7-max-1m",
       "qwen3.7-max-nothink",
     ])
     assert.deepEqual(Object.keys(config.provider["openai-bailian-token-plan"].models), [
@@ -139,8 +141,26 @@ describe("client cache proxy configuration", () => {
       "qwen3.6-flash",
       "qwen3.6-flash-nothink",
       "qwen3.7-max",
+      "qwen3.7-max-512k",
+      "qwen3.7-max-1m",
       "qwen3.7-max-nothink",
     ])
+    assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-512k"].limit, {
+      context: 512000,
+      output: 65536,
+    })
+    assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-1m"].limit, {
+      context: 1000000,
+      output: 65536,
+    })
+    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-512k"].limit, {
+      context: 512000,
+      output: 65536,
+    })
+    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-1m"].limit, {
+      context: 1000000,
+      output: 65536,
+    })
     assert.equal(config.provider["bailian-custom-cached"], undefined)
     assert.equal(config.provider.other.name, "Other provider")
 

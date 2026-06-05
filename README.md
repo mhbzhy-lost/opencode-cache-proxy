@@ -144,6 +144,8 @@ Add a custom provider in your `opencode.json` (usually at
         "qwen3.6-flash":          { "name": "Qwen 3.6 Flash" },
         "qwen3.6-flash-nothink":  { "name": "Qwen 3.6 Flash (no thinking)" },
         "qwen3.7-max":            { "name": "Qwen 3.7 Max" },
+        "qwen3.7-max-512k":       { "name": "Qwen 3.7 Max (512k)", "limit": { "context": 512000, "output": 65536 } },
+        "qwen3.7-max-1m":         { "name": "Qwen 3.7 Max (1M)", "limit": { "context": 1000000, "output": 65536 } },
         "qwen3.7-max-nothink":    { "name": "Qwen 3.7 Max (no thinking)" }
       }
     },
@@ -163,6 +165,8 @@ Add a custom provider in your `opencode.json` (usually at
         "qwen3.6-flash":          { "name": "Qwen 3.6 Flash" },
         "qwen3.6-flash-nothink":  { "name": "Qwen 3.6 Flash (no thinking)" },
         "qwen3.7-max":            { "name": "Qwen 3.7 Max" },
+        "qwen3.7-max-512k":       { "name": "Qwen 3.7 Max (512k)", "limit": { "context": 512000, "output": 65536 } },
+        "qwen3.7-max-1m":         { "name": "Qwen 3.7 Max (1M)", "limit": { "context": 1000000, "output": 65536 } },
         "qwen3.7-max-nothink":    { "name": "Qwen 3.7 Max (no thinking)" }
       }
     },
@@ -347,6 +351,8 @@ Each Qwen3 model is exposed twice:
 | Alias | Behavior |
 |-------|----------|
 | `qwen3.7-max` | Model defaults (`enable_thinking=true`, `thinking_budget=max`) |
+| `qwen3.7-max-512k` | OpenCode context limit 512k / output limit 64k; proxy forwards upstream as `qwen3.7-max` |
+| `qwen3.7-max-1m` | OpenCode context limit 1M / output limit 64k; proxy forwards upstream as `qwen3.7-max` |
 | `qwen3.7-max-nothink` | Proxy strips suffix, injects `enable_thinking=false` upstream |
 
 Same for `qwen3.6-plus` and `qwen3.6-flash`. The `-nothink` suffix is retained

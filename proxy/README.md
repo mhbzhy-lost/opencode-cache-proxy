@@ -160,6 +160,10 @@ Each Qwen3 model is exposed twice in `openai-bailiab-api` and
 
 - `qwen3.6-plus` / `qwen3.6-flash` / `qwen3.7-max` — model defaults
   (`enable_thinking=true`, `thinking_budget=max`); model self-adapts depth.
+- `qwen3.7-max-512k` / `qwen3.7-max-1m` — OpenCode context-size aliases
+  with `limit.context` set to 512k or 1M and `limit.output` set to 64k. The
+  proxy forwards them upstream as `qwen3.7-max` and leaves thinking mode
+  unchanged.
 - `qwen3.6-plus-nothink` / `qwen3.6-flash-nothink` / `qwen3.7-max-nothink` —
   proxy strips the suffix and injects `enable_thinking=false` before
   forwarding. Upstream sees only the real model id.

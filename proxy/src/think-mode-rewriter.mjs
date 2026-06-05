@@ -13,6 +13,12 @@
  */
 
 const NO_THINK_SUFFIX = "-nothink"
+const QWEN_CONTEXT_ALIASES = {
+  "qwen3.7-max-512k": "qwen3.7-max",
+  "qwen3.7-max-1m": "qwen3.7-max",
+}
+
+const resolveContextAlias = (modelName) => QWEN_CONTEXT_ALIASES[modelName] || modelName
 
 export const resolveThinkMode = (modelName) => {
   if (typeof modelName !== "string" || !modelName) {
@@ -23,13 +29,14 @@ export const resolveThinkMode = (modelName) => {
   // default cohort and ship a fake model id upstream.
   const trimmed = modelName.trim()
   if (trimmed.endsWith(NO_THINK_SUFFIX)) {
+    const upstreamModel = trimmed.slice(0, -NO_THINK_SUFFIX.length)
     return {
-      upstreamModel: trimmed.slice(0, -NO_THINK_SUFFIX.length),
+      upstreamModel: resolveContextAlias(upstreamModel),
       enableThinking: false,
       alias: trimmed,
     }
   }
-  return { upstreamModel: trimmed, enableThinking: null, alias: trimmed }
+  return { upstreamModel: resolveContextAlias(trimmed), enableThinking: null, alias: trimmed }
 }
 
 /**
