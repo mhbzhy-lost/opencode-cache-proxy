@@ -62,7 +62,21 @@ const QWEN_OPEN_CODE_MODELS = {
 }
 
 const IDEALAB_OPEN_CODE_MODELS = {
-  "Qwen3.7-Max-DogFooding": { name: "Qwen 3.7 Max DogFooding" },
+  "Qwen3.7-Max-DogFooding": {
+    name: "Qwen 3.7 Max DogFooding",
+    options: { enable_thinking: true },
+    variants: {
+      nothink: { enable_thinking: false },
+    },
+  },
+  "Qwen3.7-Max-DogFooding-256k": {
+    name: "Qwen 3.7 Max DogFooding (256k)",
+    limit: { context: 256000, output: 32768 },
+    options: { enable_thinking: true },
+    variants: {
+      nothink: { enable_thinking: false },
+    },
+  },
 }
 
 export const defaultOpenCodeConfigPath = (env = process.env) =>

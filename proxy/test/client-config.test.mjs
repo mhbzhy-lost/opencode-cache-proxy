@@ -75,9 +75,15 @@ describe("client cache proxy configuration", () => {
     )
     assert.equal(config.provider["openai-idealab"].name, "OpenAI Idealab")
     assert.equal(config.provider["openai-idealab"].options.headers, undefined)
-    assert.deepEqual(config.provider["openai-idealab"].models, {
-      "Qwen3.7-Max-DogFooding": { name: "Qwen 3.7 Max DogFooding" },
-    })
+    const idealabModels = config.provider["openai-idealab"].models
+    assert.equal(idealabModels["Qwen3.7-Max-DogFooding"].name, "Qwen 3.7 Max DogFooding")
+    assert.equal(idealabModels["Qwen3.7-Max-DogFooding"].limit, undefined, "DogFooding base model must not set limit; upstream enforces its own 1M window")
+    assert.ok(idealabModels["Qwen3.7-Max-DogFooding"].variants, "DogFooding model must have variants to trigger SDK cache_control markers")
+    assert.equal(idealabModels["Qwen3.7-Max-DogFooding"].variants.default, undefined, "DogFooding variants must not include a 'default' key; opencode TUI auto-adds 'Default' for the base model config, so an explicit 'default' key produces a duplicate entry")
+    assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding"].options, { enable_thinking: true })
+    assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding"].variants.nothink, { enable_thinking: false })
+    assert.equal(idealabModels["Qwen3.7-Max-DogFooding-256k"]?.name, "Qwen 3.7 Max DogFooding (256k)")
+    assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding-256k"]?.limit, { context: 256000, output: 32768 })
     assert.equal(config.provider["anthropic-idealab-cached"].npm, "@ai-sdk/anthropic")
     assert.equal(config.provider["anthropic-idealab-cached"].name, "Anthropic Idealab cached")
     assert.equal(
