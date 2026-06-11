@@ -33,8 +33,6 @@ const ANTHROPIC_MODEL_NAMES = {
 const ANTHROPIC_OPUS_CONTEXT_MODELS = {
   "claude-opus-4-6": { name: "Claude Opus 4.6", context: 200000 },
   "claude-opus-4-6-200k": { name: "Claude Opus 4.6 (200k)", context: 200000 },
-  "claude-opus-4-6-300k": { name: "Claude Opus 4.6 (300k)", context: 300000 },
-  "claude-opus-4-6-500k": { name: "Claude Opus 4.6 (500k)", context: 500000 },
   "claude-opus-4-6-1m": { name: "Claude Opus 4.6 (1M)", context: 1000000 },
 }
 
@@ -46,19 +44,15 @@ const ANTHROPIC_OPUS_EFFORT_VARIANTS = {
 }
 
 const QWEN_MODEL_NAMES = {
-  "qwen3.6-plus": "Qwen 3.6 Plus (cached)",
+  "qwen3.7-plus": "Qwen 3.7 Plus (cached)",
   "qwen3.7-max": "Qwen 3.7 Max (cached)",
 }
 
 const QWEN_OPEN_CODE_MODELS = {
-  "qwen3.6-plus": { name: "Qwen 3.6 Plus" },
-  "qwen3.6-plus-nothink": { name: "Qwen 3.6 Plus (no thinking)" },
-  "qwen3.6-flash": { name: "Qwen 3.6 Flash" },
-  "qwen3.6-flash-nothink": { name: "Qwen 3.6 Flash (no thinking)" },
   "qwen3.7-max": { name: "Qwen 3.7 Max" },
-  "qwen3.7-max-512k": { name: "Qwen 3.7 Max (512k)", limit: { context: 512000, output: 65536 } },
-  "qwen3.7-max-1m": { name: "Qwen 3.7 Max (1M)", limit: { context: 1000000, output: 65536 } },
-  "qwen3.7-max-nothink": { name: "Qwen 3.7 Max (no thinking)" },
+  "qwen3.7-max-256k": { name: "Qwen 3.7 Max (256k)", limit: { context: 256000, output: 32768 } },
+  "qwen3.7-plus": { name: "Qwen 3.7 Plus" },
+  "qwen3.7-plus-nothink": { name: "Qwen 3.7 Plus (no thinking)" },
 }
 
 const IDEALAB_OPEN_CODE_MODELS = {
@@ -359,7 +353,7 @@ export const configureQwenCacheProxy = async ({
   repoRoot,
   port = DEFAULT_PORT,
   baseUrl = qwenProviderBaseUrl(port),
-  modelIds = ["qwen3.6-plus", "qwen3.7-max"],
+  modelIds = ["qwen3.7-plus", "qwen3.7-max"],
   staleModelIds = ["qwen3-coder-plus"],
   envKey = "BAILIAN_TOKEN_PLAN_API_KEY",
   contextWindowSize = 1000000,

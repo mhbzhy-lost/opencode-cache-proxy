@@ -1023,7 +1023,7 @@ describe("createBailianCacheProxy", () => {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            model: "qwen3.7-max-512k",
+            model: "qwen3.7-max-256k",
             messages: [{ role: "user", content: "hi" }],
           }),
         },
@@ -1035,7 +1035,7 @@ describe("createBailianCacheProxy", () => {
         false,
         "must NOT inject enable_thinking for context-only aliases",
       )
-      assert.equal(records[0].model, "qwen3.7-max-512k")
+      assert.equal(records[0].model, "qwen3.7-max-256k")
     } finally {
       await close(proxy.server)
       await close(upstream)

@@ -14,8 +14,7 @@
 
 const NO_THINK_SUFFIX = "-nothink"
 const QWEN_CONTEXT_ALIASES = {
-  "qwen3.7-max-512k": "qwen3.7-max",
-  "qwen3.7-max-1m": "qwen3.7-max",
+  "qwen3.7-max-256k": "qwen3.7-max",
 }
 
 const resolveContextAlias = (modelName) => QWEN_CONTEXT_ALIASES[modelName] || modelName

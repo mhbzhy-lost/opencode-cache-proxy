@@ -110,8 +110,6 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), [
       "claude-opus-4-6",
       "claude-opus-4-6-200k",
-      "claude-opus-4-6-300k",
-      "claude-opus-4-6-500k",
       "claude-opus-4-6-1m",
     ])
     assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].options, {
@@ -129,8 +127,6 @@ describe("client cache proxy configuration", () => {
       {
         "claude-opus-4-6": 200000,
         "claude-opus-4-6-200k": 200000,
-        "claude-opus-4-6-300k": 300000,
-        "claude-opus-4-6-500k": 500000,
         "claude-opus-4-6-1m": 1000000,
       },
     )
@@ -141,40 +137,29 @@ describe("client cache proxy configuration", () => {
       max: { effort: "max" },
     })
     assert.deepEqual(Object.keys(config.provider["openai-bailiab-api"].models), [
-      "qwen3.6-plus",
-      "qwen3.6-plus-nothink",
-      "qwen3.6-flash",
-      "qwen3.6-flash-nothink",
       "qwen3.7-max",
-      "qwen3.7-max-512k",
-      "qwen3.7-max-1m",
-      "qwen3.7-max-nothink",
+      "qwen3.7-max-256k",
+      "qwen3.7-plus",
+      "qwen3.7-plus-nothink",
     ])
     assert.deepEqual(Object.keys(config.provider["openai-bailian-token-plan"].models), [
-      "qwen3.6-plus",
-      "qwen3.6-plus-nothink",
-      "qwen3.6-flash",
-      "qwen3.6-flash-nothink",
       "qwen3.7-max",
-      "qwen3.7-max-512k",
-      "qwen3.7-max-1m",
-      "qwen3.7-max-nothink",
+      "qwen3.7-max-256k",
+      "qwen3.7-plus",
+      "qwen3.7-plus-nothink",
     ])
-    assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-512k"].limit, {
-      context: 512000,
-      output: 65536,
+    assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-max"].limit, undefined, "qwen3.7-max base model must not set limit; upstream enforces its own window")
+    assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-256k"].limit, {
+      context: 256000,
+      output: 32768,
     })
-    assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-1m"].limit, {
-      context: 1000000,
-      output: 65536,
-    })
-    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-512k"].limit, {
-      context: 512000,
-      output: 65536,
-    })
-    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-1m"].limit, {
-      context: 1000000,
-      output: 65536,
+    assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-plus"].name, "Qwen 3.7 Plus")
+    assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-plus"].limit, undefined, "qwen3.7-plus base model must not set limit")
+    assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-plus-nothink"].name, "Qwen 3.7 Plus (no thinking)")
+    assert.equal(config.provider["openai-bailian-token-plan"].models["qwen3.7-max"].limit, undefined, "qwen3.7-max base model must not set limit; upstream enforces its own window")
+    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-256k"].limit, {
+      context: 256000,
+      output: 32768,
     })
     assert.equal(config.provider["bailian-custom-cached"], undefined)
     assert.equal(config.provider.other.name, "Other provider")
@@ -241,8 +226,6 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), [
       "claude-opus-4-6",
       "claude-opus-4-6-200k",
-      "claude-opus-4-6-300k",
-      "claude-opus-4-6-500k",
       "claude-opus-4-6-1m",
     ])
     assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
@@ -332,7 +315,7 @@ describe("client cache proxy configuration", () => {
         modelProviders: {
           openai: [
             {
-              id: "qwen3.6-plus",
+              id: "qwen3.7-plus",
               name: "Existing Qwen",
               envKey: "BAILIAN_TOKEN_PLAN_API_KEY",
               baseUrl: "https://example.invalid/v1",
@@ -363,7 +346,7 @@ describe("client cache proxy configuration", () => {
       settingsPath,
       repoRoot,
       port: 49876,
-      modelIds: ["qwen3.6-plus", "qwen3.7-max"],
+      modelIds: ["qwen3.7-plus", "qwen3.7-max"],
     })
 
     const settings = await readJson(settingsPath)
@@ -374,10 +357,10 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(settings.mcpServers, { existing: { command: "keep" } })
     assert.equal(byId["qwen3-coder-plus"], undefined)
     assert.equal(byId["deepseek-v3.2"].name, "DeepSeek")
-    assert.equal(byId["qwen3.6-plus"].baseUrl, "http://127.0.0.1:49876/v1")
-    assert.equal(byId["qwen3.6-plus"].generationConfig.enableCacheControl, true)
-    assert.equal(byId["qwen3.6-plus"].generationConfig.contextWindowSize, 1000000)
-    assert.deepEqual(byId["qwen3.6-plus"].generationConfig.extra_body, { enable_thinking: true })
+    assert.equal(byId["qwen3.7-plus"].baseUrl, "http://127.0.0.1:49876/v1")
+    assert.equal(byId["qwen3.7-plus"].generationConfig.enableCacheControl, true)
+    assert.equal(byId["qwen3.7-plus"].generationConfig.contextWindowSize, 1000000)
+    assert.deepEqual(byId["qwen3.7-plus"].generationConfig.extra_body, { enable_thinking: true })
     assert.equal(byId["qwen3.7-max"].name, "Qwen 3.7 Max (cached)")
     assert.equal(settings.security.auth.selectedType, "openai")
     assert.equal(settings.hooks.SessionStart.length, 2)
