@@ -69,6 +69,15 @@ describe("client cache proxy configuration", () => {
       config.provider["openai-bailian-token-plan"].options.headers["x-cache-proxy-marker-strategy"],
       "turn-stable",
     )
+    assert.equal(
+      config.provider["openai-idealab"].options.baseURL,
+      "https://idealab.alibaba-inc.com/api/openai/v1",
+    )
+    assert.equal(config.provider["openai-idealab"].name, "OpenAI Idealab")
+    assert.equal(config.provider["openai-idealab"].options.headers, undefined)
+    assert.deepEqual(config.provider["openai-idealab"].models, {
+      "Qwen3.7-Max-DogFooding": { name: "Qwen 3.7 Max DogFooding" },
+    })
     assert.equal(config.provider["anthropic-idealab-cached"].npm, "@ai-sdk/anthropic")
     assert.equal(config.provider["anthropic-idealab-cached"].name, "Anthropic Idealab cached")
     assert.equal(
@@ -202,6 +211,11 @@ describe("client cache proxy configuration", () => {
       config.provider["openai-bailian-token-plan"].options.headers["x-cache-proxy-marker-strategy"],
       "fraction",
     )
+    assert.equal(
+      config.provider["openai-idealab"].options.baseURL,
+      "https://idealab.alibaba-inc.com/api/openai/v1",
+    )
+    assert.equal(config.provider["openai-idealab"].options.headers, undefined)
     assert.equal(
       config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-base-url"],
       "https://idealab.alibaba-inc.com/api/anthropic",

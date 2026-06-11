@@ -41,6 +41,16 @@ unrelated providers and hooks. The OpenCode providers it writes to
         }
       }
     },
+    "openai-idealab": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenAI Idealab",
+      "options": {
+        "baseURL": "https://idealab.alibaba-inc.com/api/openai/v1"
+      },
+      "models": {
+        "Qwen3.7-Max-DogFooding": { "name": "Qwen 3.7 Max DogFooding" }
+      }
+    },
     "anthropic-idealab-cached": {
       "npm": "@ai-sdk/anthropic",
       "name": "Anthropic Idealab cached",
@@ -156,7 +166,9 @@ arbitrary upstream forwarder.
 ## Thinking Mode Variants
 
 Each Qwen3 model is exposed twice in `openai-bailiab-api` and
-`openai-bailian-token-plan`:
+`openai-bailian-token-plan`. `openai-idealab` exposes only
+`Qwen3.7-Max-DogFooding` against the Idealab OpenAI endpoint, direct to upstream
+without this cache proxy.
 
 - `qwen3.6-plus` / `qwen3.6-flash` / `qwen3.7-max` — model defaults
   (`enable_thinking=true`, `thinking_budget=max`); model self-adapts depth.

@@ -9,11 +9,13 @@ const DEFAULT_PORT = 48761
 const DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 const DEFAULT_OPENAI_BAILIAN_TOKEN_PLAN_UPSTREAM_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+const DEFAULT_OPENAI_IDEALAB_UPSTREAM_BASE_URL = "https://idealab.alibaba-inc.com/api/openai/v1"
 const DEFAULT_ANTHROPIC_IDEALAB_UPSTREAM_BASE_URL = "https://idealab.alibaba-inc.com/api/anthropic"
 const DEFAULT_MARKER_STRATEGY = "turn-stable"
 const DEFAULT_ANTHROPIC_CACHE_STRATEGY = "cache"
 const OPENCODE_PROVIDER_ID = "openai-bailiab-api"
 const OPENCODE_TOKEN_PLAN_PROVIDER_ID = "openai-bailian-token-plan"
+const OPENCODE_IDEALAB_PROVIDER_ID = "openai-idealab"
 const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-idealab-cached"
 const LEGACY_OPENCODE_PROVIDER_IDS = [
   "bailian-cache",
@@ -57,6 +59,10 @@ const QWEN_OPEN_CODE_MODELS = {
   "qwen3.7-max-512k": { name: "Qwen 3.7 Max (512k)", limit: { context: 512000, output: 65536 } },
   "qwen3.7-max-1m": { name: "Qwen 3.7 Max (1M)", limit: { context: 1000000, output: 65536 } },
   "qwen3.7-max-nothink": { name: "Qwen 3.7 Max (no thinking)" },
+}
+
+const IDEALAB_OPEN_CODE_MODELS = {
+  "Qwen3.7-Max-DogFooding": { name: "Qwen 3.7 Max DogFooding" },
 }
 
 export const defaultOpenCodeConfigPath = (env = process.env) =>
@@ -139,6 +145,15 @@ export const buildOpenCodeProvider = ({
     },
   },
   models: QWEN_OPEN_CODE_MODELS,
+})
+
+const buildOpenCodeIdealabProvider = () => ({
+  npm: "@ai-sdk/openai-compatible",
+  name: "OpenAI Idealab",
+  options: {
+    baseURL: DEFAULT_OPENAI_IDEALAB_UPSTREAM_BASE_URL,
+  },
+  models: IDEALAB_OPEN_CODE_MODELS,
 })
 
 export const buildOpenCodeAnthropicProvider = ({
@@ -224,6 +239,14 @@ export const configureOpenCodeCacheProxy = async ({
     messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_PROVIDER_ID} configured`)
   } else {
     messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_PROVIDER_ID} already up to date`)
+  }
+
+  const desiredIdealabProvider = buildOpenCodeIdealabProvider()
+  if (!jsonEqual(providers[OPENCODE_IDEALAB_PROVIDER_ID], desiredIdealabProvider)) {
+    providers[OPENCODE_IDEALAB_PROVIDER_ID] = desiredIdealabProvider
+    messages.push(`[provider] ${OPENCODE_IDEALAB_PROVIDER_ID} configured`)
+  } else {
+    messages.push(`[provider] ${OPENCODE_IDEALAB_PROVIDER_ID} already up to date`)
   }
 
   const desiredAnthropicProvider = buildOpenCodeAnthropicProvider({

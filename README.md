@@ -170,6 +170,16 @@ Add a custom provider in your `opencode.json` (usually at
         "qwen3.7-max-nothink":    { "name": "Qwen 3.7 Max (no thinking)" }
       }
     },
+    "openai-idealab": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenAI Idealab",
+      "options": {
+        "baseURL": "https://idealab.alibaba-inc.com/api/openai/v1"
+      },
+      "models": {
+        "Qwen3.7-Max-DogFooding": { "name": "Qwen 3.7 Max DogFooding" }
+      }
+    },
     "anthropic-idealab-cached": {
       "npm": "@ai-sdk/anthropic",
       "name": "Anthropic Idealab cached",
@@ -199,13 +209,15 @@ Add a custom provider in your `opencode.json` (usually at
 }
 ```
 
-The `baseURL` values point at the local proxy. `openai-bailiab-api` and
-`openai-bailian-token-plan` use the OpenAI-compatible chat-completions route
-with DashScope/Bailian and token-plan upstreams; `anthropic-idealab-cached`
-uses the Anthropic Messages route via `@ai-sdk/anthropic` and carries the
-Idealab upstream plus Claude-compatible upstream user-agent in provider
-headers. Add another platform-specific Anthropic provider when another
-upstream is needed.
+The cached provider `baseURL` values point at the local proxy.
+`openai-bailiab-api` and `openai-bailian-token-plan` use the OpenAI-compatible
+chat-completions route with DashScope/Bailian and token-plan upstreams.
+`openai-idealab` is a direct provider for Idealab OpenAI and exposes only
+`Qwen3.7-Max-DogFooding`; it does not go through the cache proxy and will not
+appear in cache usage stats. `anthropic-idealab-cached` uses the Anthropic
+Messages route via `@ai-sdk/anthropic` and carries the Idealab upstream plus
+Claude-compatible upstream user-agent in provider headers. Add another platform-specific
+Anthropic provider when another upstream is needed.
 The Opus model defaults to high effort and exposes `low`, `medium`, `high`,
 and `max` OpenCode variants for switching thinking intensity.
 Other OpenCode providers are unaffected.
