@@ -43,11 +43,10 @@ test("install-opencode.sh configures OpenCode without requiring auth in --no-aut
     "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
   )
   assert.equal(
-    config.provider["anthropic-idealab-cached"].options.baseURL,
+    config.provider["anthropic-idealab"].options.baseURL,
     "http://127.0.0.1:48761/apps/anthropic/v1",
   )
-  assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), [
-    "claude-opus-4-6",
+  assert.deepEqual(Object.keys(config.provider["anthropic-idealab"].models), [
     "claude-opus-4-6-200k",
     "claude-opus-4-6-1m",
   ])

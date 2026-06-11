@@ -16,12 +16,13 @@ const DEFAULT_ANTHROPIC_CACHE_STRATEGY = "cache"
 const OPENCODE_PROVIDER_ID = "openai-bailiab-api"
 const OPENCODE_TOKEN_PLAN_PROVIDER_ID = "openai-bailian-token-plan"
 const OPENCODE_IDEALAB_PROVIDER_ID = "openai-idealab"
-const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-idealab-cached"
+const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-idealab"
 const LEGACY_OPENCODE_PROVIDER_IDS = [
   "bailian-cache",
   "bailian-custom-cached",
   "openai-compatible-cached",
   "anthropic-cached",
+  "anthropic-idealab-cached",
 ]
 const QWEN_HOOK_START_NAME = "bailian-cache-proxy-start"
 const QWEN_HOOK_STOP_NAME = "bailian-cache-proxy-stop"
@@ -31,7 +32,6 @@ const ANTHROPIC_MODEL_NAMES = {
 }
 
 const ANTHROPIC_OPUS_CONTEXT_MODELS = {
-  "claude-opus-4-6": { name: "Claude Opus 4.6", context: 200000 },
   "claude-opus-4-6-200k": { name: "Claude Opus 4.6 (200k)", context: 200000 },
   "claude-opus-4-6-1m": { name: "Claude Opus 4.6 (1M)", context: 1000000 },
 }
@@ -44,8 +44,8 @@ const ANTHROPIC_OPUS_EFFORT_VARIANTS = {
 }
 
 const QWEN_MODEL_NAMES = {
-  "qwen3.7-plus": "Qwen 3.7 Plus (cached)",
-  "qwen3.7-max": "Qwen 3.7 Max (cached)",
+  "qwen3.7-plus": "Qwen 3.7 Plus",
+  "qwen3.7-max": "Qwen 3.7 Max",
 }
 
 const QWEN_OPEN_CODE_MODELS = {
@@ -141,7 +141,7 @@ export const buildOpenCodeProvider = ({
   port = DEFAULT_PORT,
   upstreamBaseUrl = DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL,
   markerStrategy = DEFAULT_MARKER_STRATEGY,
-  name = "OpenAI Bailian API cached",
+  name = "OpenAI Bailian API",
 } = {}) => ({
   npm: "@ai-sdk/openai-compatible",
   name,
@@ -169,7 +169,7 @@ export const buildOpenCodeAnthropicProvider = ({
   existing = null,
 } = {}) => ({
   npm: "@ai-sdk/anthropic",
-  name: "Anthropic Idealab cached",
+  name: "Anthropic Idealab",
   options: {
     baseURL: `http://127.0.0.1:${port}/apps/anthropic/v1`,
     headers: {
@@ -240,7 +240,7 @@ export const configureOpenCodeCacheProxy = async ({
     port,
     upstreamBaseUrl: DEFAULT_OPENAI_BAILIAN_TOKEN_PLAN_UPSTREAM_BASE_URL,
     markerStrategy,
-    name: "OpenAI Bailian token-plan cached",
+    name: "OpenAI Bailian token-plan",
   })
   if (!jsonEqual(providers[OPENCODE_TOKEN_PLAN_PROVIDER_ID], desiredTokenPlanProvider)) {
     providers[OPENCODE_TOKEN_PLAN_PROVIDER_ID] = desiredTokenPlanProvider
@@ -325,7 +325,7 @@ const buildQwenProvider = ({
   return {
     ...(existing && typeof existing === "object" ? existing : {}),
     id: modelId,
-    name: QWEN_MODEL_NAMES[modelId] || `${modelId} (cached)`,
+    name: QWEN_MODEL_NAMES[modelId] || modelId,
     envKey,
     baseUrl,
     generationConfig,

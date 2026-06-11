@@ -54,18 +54,18 @@ describe("OpenCode auth bootstrap", () => {
     const configPath = join(dir, "opencode.json")
     await writeFile(configPath, JSON.stringify({
       provider: {
-        "openai-bailiab-api": { name: "OpenAI Bailian API cached", npm: "@ai-sdk/openai-compatible" },
-        "openai-bailian-token-plan": { name: "OpenAI Bailian token-plan cached", npm: "@ai-sdk/openai-compatible" },
-        "anthropic-idealab-cached": { name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
+        "openai-bailiab-api": { name: "OpenAI Bailian API", npm: "@ai-sdk/openai-compatible" },
+        "openai-bailian-token-plan": { name: "OpenAI Bailian token-plan", npm: "@ai-sdk/openai-compatible" },
+        "anthropic-idealab": { name: "Anthropic Idealab", npm: "@ai-sdk/anthropic" },
       },
     }))
 
     const choices = await listOpenCodeProviderChoices({ configPath })
 
     assert.deepEqual(choices, [
-      { id: "anthropic-idealab-cached", name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
-      { id: "openai-bailiab-api", name: "OpenAI Bailian API cached", npm: "@ai-sdk/openai-compatible" },
-      { id: "openai-bailian-token-plan", name: "OpenAI Bailian token-plan cached", npm: "@ai-sdk/openai-compatible" },
+      { id: "anthropic-idealab", name: "Anthropic Idealab", npm: "@ai-sdk/anthropic" },
+      { id: "openai-bailiab-api", name: "OpenAI Bailian API", npm: "@ai-sdk/openai-compatible" },
+      { id: "openai-bailian-token-plan", name: "OpenAI Bailian token-plan", npm: "@ai-sdk/openai-compatible" },
     ])
 
     await rm(dir, { recursive: true, force: true })
@@ -81,16 +81,16 @@ describe("OpenCode auth bootstrap", () => {
 
     const result = await writeOpenCodeCredential({
       authPath,
-      providerId: "anthropic-idealab-cached",
+      providerId: "anthropic-idealab",
       apiKey: "sk-anthropic",
     })
 
     const auth = await readJson(authPath)
     const mode = (await stat(authPath)).mode & 0o777
-    assert.equal(result.providerId, "anthropic-idealab-cached")
+    assert.equal(result.providerId, "anthropic-idealab")
     assert.deepEqual(auth, {
       deepseek: { type: "api", key: "sk-deepseek" },
-      "anthropic-idealab-cached": { type: "api", key: "sk-anthropic" },
+      "anthropic-idealab": { type: "api", key: "sk-anthropic" },
     })
     assert.equal(mode, 0o600)
 
@@ -121,7 +121,7 @@ describe("OpenCode auth bootstrap", () => {
     let stdout = ""
     const output = { write: (chunk) => { stdout += chunk } }
 
-    const apiKeyPromise = readApiKey({ providerId: "anthropic-idealab-cached", input, output })
+    const apiKeyPromise = readApiKey({ providerId: "anthropic-idealab", input, output })
 
     assert.equal(input.resumeCalls, 1)
     input.emit("keypress", "s", {})
@@ -132,7 +132,7 @@ describe("OpenCode auth bootstrap", () => {
 
     assert.equal(await apiKeyPromise, "sk-test")
     assert.deepEqual(input.rawModes, [true, false])
-    assert.match(stdout, /API key for anthropic-idealab-cached:/)
+    assert.match(stdout, /API key for anthropic-idealab:/)
     assert.doesNotMatch(stdout, /sk-test/)
   })
 
@@ -143,7 +143,7 @@ describe("OpenCode auth bootstrap", () => {
     const output = { write: () => {} }
 
     const apiKeyPromise = readApiKey({
-      providerId: "anthropic-idealab-cached",
+      providerId: "anthropic-idealab",
       input,
       output,
       signalTarget,
@@ -163,9 +163,9 @@ describe("OpenCode auth bootstrap", () => {
     const authPath = join(dir, "auth.json")
     await writeFile(configPath, JSON.stringify({
       provider: {
-        "openai-bailiab-api": { name: "OpenAI Bailian API cached", npm: "@ai-sdk/openai-compatible" },
-        "openai-bailian-token-plan": { name: "OpenAI Bailian token-plan cached", npm: "@ai-sdk/openai-compatible" },
-        "anthropic-idealab-cached": { name: "Anthropic Idealab cached", npm: "@ai-sdk/anthropic" },
+        "openai-bailiab-api": { name: "OpenAI Bailian API", npm: "@ai-sdk/openai-compatible" },
+        "openai-bailian-token-plan": { name: "OpenAI Bailian token-plan", npm: "@ai-sdk/openai-compatible" },
+        "anthropic-idealab": { name: "Anthropic Idealab", npm: "@ai-sdk/anthropic" },
       },
     }))
 
@@ -178,10 +178,10 @@ describe("OpenCode auth bootstrap", () => {
     ], { input: "1\nsk-interactive\n" })
 
     assert.equal(result.status, 0, result.stderr)
-    assert.match(result.stdout, /1\. anthropic-idealab-cached/)
-    assert.match(result.stdout, /credential stored for anthropic-idealab-cached/)
+    assert.match(result.stdout, /1\. anthropic-idealab\b/)
+    assert.match(result.stdout, /credential stored for anthropic-idealab\b/)
     const auth = await readJson(authPath)
-    assert.equal(auth["anthropic-idealab-cached"].key, "sk-interactive")
+    assert.equal(auth["anthropic-idealab"].key, "sk-interactive")
 
     await rm(dir, { recursive: true, force: true })
   })

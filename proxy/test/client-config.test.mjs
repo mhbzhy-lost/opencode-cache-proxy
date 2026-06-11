@@ -46,7 +46,7 @@ describe("client cache proxy configuration", () => {
       config.provider["openai-bailiab-api"].options.baseURL,
       "http://127.0.0.1:49876/compatible-mode/v1",
     )
-    assert.equal(config.provider["openai-bailiab-api"].name, "OpenAI Bailian API cached")
+    assert.equal(config.provider["openai-bailiab-api"].name, "OpenAI Bailian API")
     assert.equal(config.provider["openai-bailiab-api"].options.apiKey, undefined)
     assert.equal(
       config.provider["openai-bailiab-api"].options.headers["x-cache-proxy-upstream-base-url"],
@@ -60,7 +60,7 @@ describe("client cache proxy configuration", () => {
       config.provider["openai-bailian-token-plan"].options.baseURL,
       "http://127.0.0.1:49876/compatible-mode/v1",
     )
-    assert.equal(config.provider["openai-bailian-token-plan"].name, "OpenAI Bailian token-plan cached")
+    assert.equal(config.provider["openai-bailian-token-plan"].name, "OpenAI Bailian token-plan")
     assert.equal(
       config.provider["openai-bailian-token-plan"].options.headers["x-cache-proxy-upstream-base-url"],
       "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
@@ -84,53 +84,51 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding"].variants.nothink, { enable_thinking: false })
     assert.equal(idealabModels["Qwen3.7-Max-DogFooding-256k"]?.name, "Qwen 3.7 Max DogFooding (256k)")
     assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding-256k"]?.limit, { context: 256000, output: 32768 })
-    assert.equal(config.provider["anthropic-idealab-cached"].npm, "@ai-sdk/anthropic")
-    assert.equal(config.provider["anthropic-idealab-cached"].name, "Anthropic Idealab cached")
+    assert.equal(config.provider["anthropic-idealab"].npm, "@ai-sdk/anthropic")
+    assert.equal(config.provider["anthropic-idealab"].name, "Anthropic Idealab")
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.baseURL,
+      config.provider["anthropic-idealab"].options.baseURL,
       "http://127.0.0.1:49876/apps/anthropic/v1",
     )
-    assert.equal(config.provider["anthropic-idealab-cached"].options.apiKey, undefined)
+    assert.equal(config.provider["anthropic-idealab"].options.apiKey, undefined)
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-upstream-base-url"],
       "https://idealab.alibaba-inc.com/api/anthropic",
     )
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-cache-strategy"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-cache-strategy"],
       "cache",
     )
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-user-agent"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-upstream-user-agent"],
       "claude-cli/2.1.156 (external, sdk-cli)",
     )
     assert.match(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-metadata-user-id"],
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     )
-    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), [
-      "claude-opus-4-6",
+    assert.deepEqual(Object.keys(config.provider["anthropic-idealab"].models), [
       "claude-opus-4-6-200k",
       "claude-opus-4-6-1m",
     ])
-    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].options, {
+    assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].options, {
       effort: "high",
     })
-    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].limit, {
+    assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].limit, {
       context: 200000,
       output: 65536,
     })
     assert.deepEqual(
       Object.fromEntries(
-        Object.entries(config.provider["anthropic-idealab-cached"].models)
+        Object.entries(config.provider["anthropic-idealab"].models)
           .map(([id, model]) => [id, model.limit.context]),
       ),
       {
-        "claude-opus-4-6": 200000,
         "claude-opus-4-6-200k": 200000,
         "claude-opus-4-6-1m": 1000000,
       },
     )
-    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
+    assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].variants, {
       low: { effort: "low" },
       medium: { effort: "medium" },
       high: { effort: "high" },
@@ -208,27 +206,26 @@ describe("client cache proxy configuration", () => {
     )
     assert.equal(config.provider["openai-idealab"].options.headers, undefined)
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-base-url"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-upstream-base-url"],
       "https://idealab.alibaba-inc.com/api/anthropic",
     )
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-cache-strategy"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-cache-strategy"],
       "cache",
     )
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-upstream-user-agent"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-upstream-user-agent"],
       "claude-cli/2.1.156 (external, sdk-cli)",
     )
     assert.notEqual(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-metadata-user-id"],
       "stable-user",
     )
-    assert.deepEqual(Object.keys(config.provider["anthropic-idealab-cached"].models), [
-      "claude-opus-4-6",
+    assert.deepEqual(Object.keys(config.provider["anthropic-idealab"].models), [
       "claude-opus-4-6-200k",
       "claude-opus-4-6-1m",
     ])
-    assert.deepEqual(config.provider["anthropic-idealab-cached"].models["claude-opus-4-6"].variants, {
+    assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].variants, {
       low: { effort: "low" },
       medium: { effort: "medium" },
       high: { effort: "high" },
@@ -265,7 +262,7 @@ describe("client cache proxy configuration", () => {
     const config = await readJson(configPath)
     assert.equal(config.provider["anthropic-cached"], undefined)
     assert.equal(
-      config.provider["anthropic-idealab-cached"].options.headers["x-cache-proxy-metadata-user-id"],
+      config.provider["anthropic-idealab"].options.headers["x-cache-proxy-metadata-user-id"],
       "existing-stable-user",
     )
 
@@ -361,7 +358,7 @@ describe("client cache proxy configuration", () => {
     assert.equal(byId["qwen3.7-plus"].generationConfig.enableCacheControl, true)
     assert.equal(byId["qwen3.7-plus"].generationConfig.contextWindowSize, 1000000)
     assert.deepEqual(byId["qwen3.7-plus"].generationConfig.extra_body, { enable_thinking: true })
-    assert.equal(byId["qwen3.7-max"].name, "Qwen 3.7 Max (cached)")
+    assert.equal(byId["qwen3.7-max"].name, "Qwen 3.7 Max")
     assert.equal(settings.security.auth.selectedType, "openai")
     assert.equal(settings.hooks.SessionStart.length, 2)
     assert.equal(
