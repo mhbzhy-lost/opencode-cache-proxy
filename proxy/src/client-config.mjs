@@ -155,11 +155,15 @@ export const buildOpenCodeProvider = ({
   models: QWEN_OPEN_CODE_MODELS,
 })
 
-const buildOpenCodeIdealabProvider = () => ({
+const buildOpenCodeIdealabProvider = ({ port = DEFAULT_PORT } = {}) => ({
   npm: "@ai-sdk/openai-compatible",
   name: "OpenAI Idealab",
   options: {
-    baseURL: DEFAULT_OPENAI_IDEALAB_UPSTREAM_BASE_URL,
+    baseURL: `http://127.0.0.1:${port}/compatible-mode/v1`,
+    headers: {
+      "x-cache-proxy-upstream-base-url": DEFAULT_OPENAI_IDEALAB_UPSTREAM_BASE_URL,
+      "x-cache-proxy-marker-strategy": "none",
+    },
   },
   models: IDEALAB_OPEN_CODE_MODELS,
 })
@@ -249,7 +253,7 @@ export const configureOpenCodeCacheProxy = async ({
     messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_PROVIDER_ID} already up to date`)
   }
 
-  const desiredIdealabProvider = buildOpenCodeIdealabProvider()
+  const desiredIdealabProvider = buildOpenCodeIdealabProvider({ port })
   if (!jsonEqual(providers[OPENCODE_IDEALAB_PROVIDER_ID], desiredIdealabProvider)) {
     providers[OPENCODE_IDEALAB_PROVIDER_ID] = desiredIdealabProvider
     messages.push(`[provider] ${OPENCODE_IDEALAB_PROVIDER_ID} configured`)

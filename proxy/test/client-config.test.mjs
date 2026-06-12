@@ -71,10 +71,19 @@ describe("client cache proxy configuration", () => {
     )
     assert.equal(
       config.provider["openai-idealab"].options.baseURL,
-      "https://idealab.alibaba-inc.com/api/openai/v1",
+      "http://127.0.0.1:49876/compatible-mode/v1",
+      "Idealab provider must go through local proxy so think-mode-rewriter can map -256k alias",
     )
     assert.equal(config.provider["openai-idealab"].name, "OpenAI Idealab")
-    assert.equal(config.provider["openai-idealab"].options.headers, undefined)
+    assert.equal(
+      config.provider["openai-idealab"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://idealab.alibaba-inc.com/api/openai/v1",
+    )
+    assert.equal(
+      config.provider["openai-idealab"].options.headers["x-cache-proxy-marker-strategy"],
+      "none",
+      "Idealab must not have proxy-injected cache_control markers; upstream honors its own caching if any",
+    )
     const idealabModels = config.provider["openai-idealab"].models
     assert.equal(idealabModels["Qwen3.7-Max-DogFooding"].name, "Qwen 3.7 Max DogFooding")
     assert.equal(idealabModels["Qwen3.7-Max-DogFooding"].limit, undefined, "DogFooding base model must not set limit; upstream enforces its own 1M window")
@@ -202,9 +211,14 @@ describe("client cache proxy configuration", () => {
     )
     assert.equal(
       config.provider["openai-idealab"].options.baseURL,
-      "https://idealab.alibaba-inc.com/api/openai/v1",
+      "http://127.0.0.1:49876/compatible-mode/v1",
+      "Idealab provider must go through local proxy regardless of marker strategy override",
     )
-    assert.equal(config.provider["openai-idealab"].options.headers, undefined)
+    assert.equal(
+      config.provider["openai-idealab"].options.headers["x-cache-proxy-marker-strategy"],
+      "none",
+      "Idealab must always use none strategy even when caller overrides other providers",
+    )
     assert.equal(
       config.provider["anthropic-idealab"].options.headers["x-cache-proxy-upstream-base-url"],
       "https://idealab.alibaba-inc.com/api/anthropic",

@@ -416,6 +416,24 @@ describe("planBailianCacheMarkers", () => {
     const count = countCacheMarkers(planned)
     assert.ok(count >= 2 && count <= 4, `expected 2-4 markers, got ${count}`)
   })
+
+  test('"none" strategy places no cache_control markers (for upstreams that handle caching themselves or do not support it)', () => {
+    const messages = [
+      { role: "system", content: repeatedText("stable", 120) },
+      { role: "user", content: repeatedText("hello", 40) },
+    ]
+    const planned = planBailianCacheMarkers(
+      { model: "Qwen3.7-Max-DogFooding", messages },
+      { minCacheTokens: 16, markerStrategy: "none" },
+    )
+    assert.equal(countCacheMarkers(planned), 0, "markerStrategy=none must produce no markers")
+    for (const msg of planned.messages) {
+      if (typeof msg.content === "string") continue
+      for (const block of msg.content || []) {
+        assert.equal(block.cache_control, undefined, "blocks must not have cache_control under none strategy")
+      }
+    }
+  })
 })
 
 describe("truncateBodyForKeepalive", () => {

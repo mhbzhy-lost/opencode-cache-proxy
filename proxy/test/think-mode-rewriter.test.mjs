@@ -54,6 +54,13 @@ describe("resolveThinkMode", () => {
     assert.equal(r.enableThinking, null)
     assert.equal(r.alias, "qwen3.7-max-256k")
   })
+
+  test("DogFooding context aliases rewrite to the upstream model", () => {
+    const r = resolveThinkMode("Qwen3.7-Max-DogFooding-256k")
+    assert.equal(r.upstreamModel, "Qwen3.7-Max-DogFooding")
+    assert.equal(r.enableThinking, null)
+    assert.equal(r.alias, "Qwen3.7-Max-DogFooding-256k")
+  })
 })
 
 describe("applyThinkModeRewrite", () => {

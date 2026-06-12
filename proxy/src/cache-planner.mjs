@@ -213,6 +213,7 @@ const selectMarkerContentIndexes = (blocks, options) => {
 
   const eligible = blocks.filter((block) => block.canMark && block.prefixTokens >= minCacheTokens)
   if (eligible.length === 0 || maxMarkers <= 0) return []
+  if (markerStrategy === "none") return []
 
   const tailBlock = eligible.at(-1)
 
