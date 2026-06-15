@@ -279,6 +279,34 @@ export const planBailianCacheMarkersWithDiagnostics = (body, options = {}) => {
     return { body, diagnostics: null }
   }
 
+  const resolvedStrategy = options.markerStrategy || DEFAULT_MARKER_STRATEGY
+
+  if (resolvedStrategy === "none") {
+    let contentBlockCount = 0
+    for (const message of body.messages) {
+      if (!message || typeof message !== "object") continue
+      if (Array.isArray(message.content)) {
+        contentBlockCount += message.content.length
+      } else if (message.content !== undefined) {
+        contentBlockCount += 1
+      }
+    }
+    return {
+      body,
+      diagnostics: {
+        version: 1,
+        strategy: "none",
+        message_count: body.messages.length,
+        content_block_count: contentBlockCount,
+        total_estimated_tokens: 0,
+        marker_count: 0,
+        messages_hash: null,
+        marker_selection_hash: shortHash("[]"),
+        markers: [],
+      },
+    }
+  }
+
   const planned = cloneJson(body)
   const blocks = []
   let prefixTokens = 0
@@ -311,7 +339,6 @@ export const planBailianCacheMarkersWithDiagnostics = (body, options = {}) => {
   })
 
   const messagesHash = shortHash(stableStringify(planned.messages))
-  const resolvedStrategy = options.markerStrategy || DEFAULT_MARKER_STRATEGY
   const selectedIndexes = new Set(selectMarkerContentIndexes(blocks, options))
   for (const block of blocks) {
     if (selectedIndexes.has(block.contentIndex)) {

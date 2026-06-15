@@ -434,6 +434,26 @@ describe("planBailianCacheMarkers", () => {
       }
     }
   })
+
+  test('"none" strategy preserves original message structure (no normalizeContentParts side-effects)', () => {
+    const original = {
+      model: "Qwen3.7-Max-DogFooding",
+      messages: [
+        { role: "system", content: "system prompt text", cache_control: { type: "ephemeral" } },
+        { role: "user", content: "user message text" },
+        { role: "assistant", content: [{ type: "text", text: "reply", cache_control: { type: "ephemeral" } }] },
+      ],
+    }
+    const { body } = planBailianCacheMarkersWithDiagnostics(
+      original,
+      { minCacheTokens: 16, markerStrategy: "none" },
+    )
+    assert.equal(body.messages[0].content, "system prompt text", "string content stays string")
+    assert.equal(body.messages[0].cache_control?.type, "ephemeral", "message-level cache_control preserved")
+    assert.equal(body.messages[1].content, "user message text", "string content stays string")
+    assert.equal(body.messages[2].content[0].cache_control?.type, "ephemeral", "part-level cache_control preserved")
+    assert.equal(body.messages[2].content[0].type, "text", "array part structure preserved")
+  })
 })
 
 describe("truncateBodyForKeepalive", () => {
