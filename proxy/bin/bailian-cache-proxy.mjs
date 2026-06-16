@@ -78,7 +78,7 @@ for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
     process.stderr.write(
       `[${ts}] bailian-cache-proxy received ${sig} (pid=${process.pid}, ppid=${process.ppid})\n`
     )
-    // Let default handler run (exit)
+    // Exit manually with matching code; default handler is suppressed
     process.exit(128 + ({ SIGHUP: 1, SIGINT: 2, SIGTERM: 15 }[sig] || 0))
   })
 }
