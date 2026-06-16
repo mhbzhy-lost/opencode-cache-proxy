@@ -80,12 +80,20 @@ export const createBailianCacheProxyPlugin = ({
     return {}
   }
 
-  if (!(await healthCheck(fetchImpl))) {
+  const healthy = await healthCheck(fetchImpl)
+
+  if (!healthy) {
+    await log(client, "warn", "proxy health check failed, starting new instance", {
+      baseUrl: proxyBaseUrl(),
+      callerPid: process.pid,
+    })
     startProxy({ client, spawnImpl })
   }
 
   await log(client, "info", "proxy ensured", {
     baseUrl: proxyBaseUrl(),
+    callerPid: process.pid,
+    wasHealthy: healthy,
   })
 
   return {}

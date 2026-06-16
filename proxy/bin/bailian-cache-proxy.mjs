@@ -71,6 +71,27 @@ const { server } = createBailianCacheProxy({
   anthropicHandler,
 })
 
+// Diagnostic: log signals so we can trace unexpected proxy exits
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+  process.on(sig, () => {
+    const ts = new Date().toISOString()
+    process.stderr.write(
+      `[${ts}] bailian-cache-proxy received ${sig} (pid=${process.pid}, ppid=${process.ppid})\n`
+    )
+    // Let default handler run (exit)
+    process.exit(128 + ({ SIGHUP: 1, SIGINT: 2, SIGTERM: 15 }[sig] || 0))
+  })
+}
+
+process.on("exit", (code) => {
+  const ts = new Date().toISOString()
+  process.stderr.write(
+    `[${ts}] bailian-cache-proxy exiting (code=${code}, pid=${process.pid})\n`
+  )
+})
+
 server.listen(port, host, () => {
-  process.stderr.write(`bailian-cache-proxy listening on http://${host}:${port}\n`)
+  process.stderr.write(
+    `bailian-cache-proxy listening on http://${host}:${port} (pid=${process.pid}, ppid=${process.ppid})\n`
+  )
 })
