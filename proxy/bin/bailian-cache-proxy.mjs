@@ -4,6 +4,7 @@ import { createAnthropicHandler } from "../src/anthropic-handler.mjs"
 import { createKeepaliveManager } from "../src/keepalive.mjs"
 import { createBailianCacheProxy } from "../src/server.mjs"
 import { createUsageRecorder } from "../src/usage-recorder.mjs"
+import { setupCrashHandlers } from "../src/crash-logging.mjs"
 
 const envNumber = (name, fallback) => {
   const raw = process.env[name]
@@ -71,24 +72,10 @@ const { server } = createBailianCacheProxy({
   anthropicHandler,
 })
 
-// Diagnostic: log signals so we can trace unexpected proxy exits
-for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
-  process.on(sig, () => {
-    const ts = new Date().toISOString()
-    process.stderr.write(
-      `[${ts}] bailian-cache-proxy received ${sig} (pid=${process.pid}, ppid=${process.ppid})\n`
-    )
-    // Exit manually with matching code; default handler is suppressed
-    process.exit(128 + ({ SIGHUP: 1, SIGINT: 2, SIGTERM: 15 }[sig] || 0))
-  })
-}
-
-process.on("exit", (code) => {
-  const ts = new Date().toISOString()
-  process.stderr.write(
-    `[${ts}] bailian-cache-proxy exiting (code=${code}, pid=${process.pid})\n`
-  )
-})
+// Diagnostic: catch all fatal async paths (uncaughtException, unhandledRejection,
+// signals, exit) and write to ~/.cache/bailian-cache-proxy/crash.log so proxy
+// crashes are never silent.
+setupCrashHandlers()
 
 server.listen(port, host, () => {
   process.stderr.write(
