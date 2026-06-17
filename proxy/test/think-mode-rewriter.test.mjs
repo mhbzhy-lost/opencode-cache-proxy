@@ -61,6 +61,13 @@ describe("resolveThinkMode", () => {
     assert.equal(r.enableThinking, null)
     assert.equal(r.alias, "Qwen3.7-Max-DogFooding-256k")
   })
+
+  test("Invite Beta 256k context alias rewrites to the upstream model", () => {
+    const r = resolveThinkMode("qwen-latest-series-invite-beta-v34-256k")
+    assert.equal(r.upstreamModel, "qwen-latest-series-invite-beta-v34")
+    assert.equal(r.enableThinking, null)
+    assert.equal(r.alias, "qwen-latest-series-invite-beta-v34-256k")
+  })
 })
 
 describe("applyThinkModeRewrite", () => {
