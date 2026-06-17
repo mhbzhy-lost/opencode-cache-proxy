@@ -148,6 +148,8 @@ describe("client cache proxy configuration", () => {
       "qwen3.7-max-256k",
       "qwen3.7-plus",
       "qwen3.7-plus-nothink",
+      "qwen-latest-series-invite-beta-v34",
+      "qwen-latest-series-invite-beta-v34-256k",
     ])
     assert.deepEqual(Object.keys(config.provider["openai-bailian-token-plan"].models), [
       "qwen3.7-max",

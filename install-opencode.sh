@@ -57,7 +57,7 @@ fi
 
 "$NODE_BIN" "$ROOT/proxy/bin/bailian-cache-proxy-configure.mjs" opencode \
   --repo-root "$ROOT" \
-  "${CONFIG_ARGS[@]}"
+  ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
 
 echo "[ok] OpenCode cache proxy configured"
 echo "[next] Restart OpenCode so it loads $ROOT/plugins"

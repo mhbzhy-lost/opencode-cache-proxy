@@ -55,6 +55,12 @@ const QWEN_OPEN_CODE_MODELS = {
   "qwen3.7-plus-nothink": { name: "Qwen 3.7 Plus (no thinking)" },
 }
 
+const BAILIAN_OPEN_CODE_MODELS = {
+  ...QWEN_OPEN_CODE_MODELS,
+  "qwen-latest-series-invite-beta-v34": { name: "Qwen Latest Series Invite Beta V34" },
+  "qwen-latest-series-invite-beta-v34-256k": { name: "Qwen Latest Series Invite Beta V34 (256k)", limit: { context: 256000, output: 32768 } },
+}
+
 const IDEALAB_OPEN_CODE_MODELS = {
   "Qwen3.7-Max-DogFooding": {
     name: "Qwen 3.7 Max DogFooding",
@@ -142,6 +148,7 @@ export const buildOpenCodeProvider = ({
   upstreamBaseUrl = DEFAULT_OPENAI_COMPATIBLE_UPSTREAM_BASE_URL,
   markerStrategy = DEFAULT_MARKER_STRATEGY,
   name = "OpenAI Bailian API",
+  models = QWEN_OPEN_CODE_MODELS,
 } = {}) => ({
   npm: "@ai-sdk/openai-compatible",
   name,
@@ -152,7 +159,7 @@ export const buildOpenCodeProvider = ({
       "x-cache-proxy-marker-strategy": markerStrategy,
     },
   },
-  models: QWEN_OPEN_CODE_MODELS,
+  models,
 })
 
 const buildOpenCodeIdealabProvider = ({ port = DEFAULT_PORT } = {}) => ({
@@ -232,6 +239,7 @@ export const configureOpenCodeCacheProxy = async ({
     port,
     upstreamBaseUrl: openaiUpstreamBaseUrl,
     markerStrategy,
+    models: BAILIAN_OPEN_CODE_MODELS,
   })
   if (!jsonEqual(providers[OPENCODE_PROVIDER_ID], desiredProvider)) {
     providers[OPENCODE_PROVIDER_ID] = desiredProvider
