@@ -402,6 +402,69 @@ describe("planBailianCacheMarkers", () => {
     assert.equal(diagnostics.strategy, "turn-stable")
   })
 
+  test("turn-stable diagnostics include location field matching Anthropic convention", () => {
+    // Must match anthropic-cache-planner behaviour: system/developer → "system",
+    // everything else → "message" (with more specific labels from turn-stable).
+    const { diagnostics } = planBailianCacheMarkersWithDiagnostics(
+      {
+        model: "qwen3.7-max",
+        messages: [
+          { role: "system", content: repeatedText("stable", 120) },
+          { role: "user", content: "do task A " + repeatedText("ctx-A", 40) },
+          { role: "assistant", content: repeatedText("res-A", 40) },
+          { role: "user", content: "do task B " + repeatedText("ctx-B", 40) },
+          { role: "assistant", content: repeatedText("tool-1", 30) },
+          { role: "user", content: [{ type: "tool_result", content: "r1" }] },
+          { role: "assistant", content: repeatedText("tool-2", 30) },
+        ],
+      },
+      { minCacheTokens: 16, markerStrategy: "turn-stable" },
+    )
+    assert.equal(diagnostics.markers.length, 4)
+
+    // First marker must be labelled "system" (system/developer role).
+    assert.equal(diagnostics.markers[0].location, "system")
+
+    // All markers must have a non-empty location string.
+    for (const entry of diagnostics.markers) {
+      assert.ok(entry.location, `marker at message_index ${entry.message_index} must have a location field`)
+    }
+
+    // Turn-stable labels the second marker as "turn-prev" (previous user turn).
+    assert.equal(diagnostics.markers[1].location, "turn-prev")
+
+    // Turn-stable labels the third marker as "current" (current user turn).
+    assert.equal(diagnostics.markers[2].location, "current")
+
+    // Tail marker is labelled "tail".
+    assert.equal(diagnostics.markers[3].location, "tail")
+  })
+
+  test("fraction-strategy diagnostics include location field with system/message/tail labels", () => {
+    const { diagnostics } = planBailianCacheMarkersWithDiagnostics(
+      {
+        model: "qwen3.7-max",
+        messages: [
+          { role: "system", content: repeatedText("stable", 120) },
+          { role: "user", content: "first user turn" },
+          { role: "assistant", content: "reply one" },
+          { role: "user", content: "second user turn" },
+          { role: "assistant", content: "reply two" },
+        ],
+      },
+      { minCacheTokens: 16, markerStrategy: "fraction" },
+    )
+    assert.equal(diagnostics.markers.length, 4)
+    // System/developer anchor → "system".
+    assert.equal(diagnostics.markers[0].location, "system")
+    // Last eligible block → "tail" (consistent with turn-stable).
+    assert.equal(diagnostics.markers[diagnostics.markers.length - 1].location, "tail")
+    // Mid-prefix fraction anchors → "message".
+    for (const entry of diagnostics.markers.slice(1, -1)) {
+      assert.equal(entry.location, "message")
+    }
+  })
+
   test("turn-stable falls back to fraction placement when no turn boundaries found", () => {
     const messages = [
       { role: "system", content: repeatedText("stable", 120) },

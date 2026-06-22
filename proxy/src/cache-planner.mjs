@@ -143,25 +143,29 @@ const findPreviousTurnAnchors = (blocks, tailBlock, limit = 2) => {
 // short conversations or tool-only interactions), fall back to fraction-based
 // placement so we don't waste slots.
 const selectTurnStableMarkerIndexes = (blocks, eligible, tailBlock, maxMarkers) => {
-  const selected = new Set()
+  const selected = new Map()
 
   // 1. System/developer anchor (highest stability).
   const firstStable = eligible.find(
     (block) => block.role === "system" || block.role === "developer",
   )
-  if (firstStable) selected.add(firstStable.contentIndex)
+  if (firstStable) selected.set(firstStable.contentIndex, "system")
 
   // 2. Tail anchor.
-  selected.add(tailBlock.contentIndex)
+  selected.set(tailBlock.contentIndex, "tail")
 
   // 3. Turn-boundary anchors (up to maxMarkers - selected.size).
+  //    Oldest-first: turnAnchors[0] is the previous turn boundary ("turn-prev"),
+  //    turnAnchors[1] (if present) is the current turn boundary ("current").
   const turnAnchors = findPreviousTurnAnchors(
     blocks, tailBlock, maxMarkers - selected.size,
   )
-  for (const anchor of turnAnchors) {
+  const turnLabels = ["turn-prev", "current"]
+  for (let i = 0; i < turnAnchors.length; i++) {
+    const anchor = turnAnchors[i]
     if (anchor.contentIndex !== tailBlock.contentIndex &&
-        anchor.prefixTokens >= blocks[0]?.prefixTokens + 1 /* non-trivial prefix */) {
-      selected.add(anchor.contentIndex)
+        anchor.prefixTokens >= blocks[0]?.prefixTokens + 1) {
+      selected.set(anchor.contentIndex, turnLabels[i])
     }
   }
 
@@ -180,13 +184,14 @@ const selectTurnStableMarkerIndexes = (blocks, eligible, tailBlock, maxMarkers) 
           (b) => b.prefixTokens <= targetTokens && b.contentIndex < tailBlock.contentIndex,
         )
         if (block && !selected.has(block.contentIndex)) {
-          selected.add(block.contentIndex)
+          selected.set(block.contentIndex, "message")
         }
       }
     }
   }
 
-  return [...selected].sort((a, b) => a - b).slice(-maxMarkers)
+  const sorted = [...selected.entries()].sort((a, b) => a[0] - b[0]).slice(-maxMarkers)
+  return new Map(sorted)
 }
 
 const selectMarkerContentIndexes = (blocks, options) => {
@@ -212,8 +217,8 @@ const selectMarkerContentIndexes = (blocks, options) => {
   }
 
   const eligible = blocks.filter((block) => block.canMark && block.prefixTokens >= minCacheTokens)
-  if (eligible.length === 0 || maxMarkers <= 0) return []
-  if (markerStrategy === "none") return []
+  if (eligible.length === 0 || maxMarkers <= 0) return new Map()
+  if (markerStrategy === "none") return new Map()
 
   const tailBlock = eligible.at(-1)
 
@@ -223,18 +228,18 @@ const selectMarkerContentIndexes = (blocks, options) => {
 
   // Legacy fraction-based strategy.
   const totalTokens = tailBlock.prefixTokens
-  const selected = new Set()
+  const selected = new Map()
 
   // 1. Stable anchor: end of system/developer prefix. Same token position
   //    every request → dashscope reuses this segment for life of the chat.
   const firstStable = eligible.find(
-    (block) => block.role === "system" || block.role === "developer",
+    (b) => b.role === "system" || b.role === "developer",
   )
-  if (firstStable) selected.add(firstStable.contentIndex)
+  if (firstStable) selected.set(firstStable.contentIndex, "system")
 
   // 2. Tail anchor: the very last eligible block, so the next-turn request
   //    can extend from here.
-  selected.add(tailBlock.contentIndex)
+  selected.set(tailBlock.contentIndex, "tail")
 
   // 3. Mid-prefix anchors at fixed token fractions between firstStable and
   //    tail. By picking blocks closest to a target token count (rather than
@@ -251,11 +256,14 @@ const selectMarkerContentIndexes = (blocks, options) => {
       const block = eligible.findLast(
         (b) => b.prefixTokens <= targetTokens && b.contentIndex < tailBlock.contentIndex,
       )
-      if (block) selected.add(block.contentIndex)
+      if (block && !selected.has(block.contentIndex)) {
+        selected.set(block.contentIndex, "message")
+      }
     }
   }
 
-  return [...selected].sort((a, b) => a - b).slice(-maxMarkers)
+  const sorted = [...selected.entries()].sort((a, b) => a[0] - b[0]).slice(-maxMarkers)
+  return new Map(sorted)
 }
 
 export const countCacheMarkers = (body) => {
@@ -339,16 +347,24 @@ export const planBailianCacheMarkersWithDiagnostics = (body, options = {}) => {
   })
 
   const messagesHash = shortHash(stableStringify(planned.messages))
-  const selectedIndexes = new Set(selectMarkerContentIndexes(blocks, options))
+  // selectMarkerContentIndexes returns a Map<contentIndex, label> where labels
+  // are "system", "turn-prev", "current", "tail", or "message". The Bailian
+  // planner uses the same convention as the Anthropic planner so that stats
+  // scripts and monitoring can treat both protocols uniformly.
+  const selected = selectMarkerContentIndexes(blocks, options)
   for (const block of blocks) {
-    if (selectedIndexes.has(block.contentIndex)) {
+    if (selected.has(block.contentIndex)) {
       annotateMarker(planned.messages[block.messageIndex], block.partIndex)
     }
   }
 
+  const baseLocation = (role) =>
+    role === "system" || role === "developer" ? "system" : "message"
+
   const markers = blocks
-    .filter((block) => selectedIndexes.has(block.contentIndex))
+    .filter((block) => selected.has(block.contentIndex))
     .map((block) => ({
+      location: selected.get(block.contentIndex) || baseLocation(block.role),
       role: block.role,
       message_index: block.messageIndex,
       part_index: block.partIndex,
