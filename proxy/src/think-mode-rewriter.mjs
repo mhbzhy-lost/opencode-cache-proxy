@@ -15,6 +15,7 @@
 const NO_THINK_SUFFIX = "-nothink"
 const QWEN_CONTEXT_ALIASES = {
   "qwen3.7-max-256k": "qwen3.7-max",
+  "qwen3.7-max-512k": "qwen3.7-max",
   "Qwen3.7-Max-DogFooding-256k": "Qwen3.7-Max-DogFooding",
   "qwen-latest-series-invite-beta-v34-256k": "qwen-latest-series-invite-beta-v34",
 }

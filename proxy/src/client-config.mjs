@@ -15,6 +15,7 @@ const DEFAULT_MARKER_STRATEGY = "turn-stable"
 const DEFAULT_ANTHROPIC_CACHE_STRATEGY = "cache"
 const OPENCODE_PROVIDER_ID = "openai-bailiab-api"
 const OPENCODE_TOKEN_PLAN_PROVIDER_ID = "openai-bailian-token-plan"
+const OPENCODE_TOKEN_PLAN_CODING_PROVIDER_ID = "openai-token-plan-coding"
 const OPENCODE_IDEALAB_PROVIDER_ID = "openai-idealab"
 const OPENCODE_ANTHROPIC_PROVIDER_ID = "anthropic-idealab"
 const LEGACY_OPENCODE_PROVIDER_IDS = [
@@ -51,6 +52,7 @@ const QWEN_MODEL_NAMES = {
 const QWEN_OPEN_CODE_MODELS = {
   "qwen3.7-max": { name: "Qwen 3.7 Max" },
   "qwen3.7-max-256k": { name: "Qwen 3.7 Max (256k)", limit: { context: 256000, output: 32768 } },
+  "qwen3.7-max-512k": { name: "Qwen 3.7 Max (512k)", limit: { context: 512000, output: 65536 } },
   "qwen3.7-plus": { name: "Qwen 3.7 Plus" },
   "qwen3.7-plus-nothink": { name: "Qwen 3.7 Plus (no thinking)" },
 }
@@ -59,6 +61,11 @@ const BAILIAN_OPEN_CODE_MODELS = {
   ...QWEN_OPEN_CODE_MODELS,
   "qwen-latest-series-invite-beta-v34": { name: "Qwen Latest Series Invite Beta V34" },
   "qwen-latest-series-invite-beta-v34-256k": { name: "Qwen Latest Series Invite Beta V34 (256k)", limit: { context: 256000, output: 32768 } },
+}
+
+const TOKEN_PLAN_CODING_OPEN_CODE_MODELS = {
+  "qwen3.7-max": { name: "Qwen 3.7 Max" },
+  "qwen3.7-max-512k": { name: "Qwen 3.7 Max (512k)", limit: { context: 512000, output: 65536 } },
 }
 
 const IDEALAB_OPEN_CODE_MODELS = {
@@ -259,6 +266,20 @@ export const configureOpenCodeCacheProxy = async ({
     messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_PROVIDER_ID} configured`)
   } else {
     messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_PROVIDER_ID} already up to date`)
+  }
+
+  const desiredTokenPlanCodingProvider = buildOpenCodeProvider({
+    port,
+    upstreamBaseUrl: DEFAULT_OPENAI_BAILIAN_TOKEN_PLAN_UPSTREAM_BASE_URL,
+    markerStrategy,
+    name: "OpenAI Token-plan coding",
+    models: TOKEN_PLAN_CODING_OPEN_CODE_MODELS,
+  })
+  if (!jsonEqual(providers[OPENCODE_TOKEN_PLAN_CODING_PROVIDER_ID], desiredTokenPlanCodingProvider)) {
+    providers[OPENCODE_TOKEN_PLAN_CODING_PROVIDER_ID] = desiredTokenPlanCodingProvider
+    messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_CODING_PROVIDER_ID} configured`)
+  } else {
+    messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_CODING_PROVIDER_ID} already up to date`)
   }
 
   const desiredIdealabProvider = buildOpenCodeIdealabProvider({ port })

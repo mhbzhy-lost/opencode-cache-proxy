@@ -146,6 +146,7 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(Object.keys(config.provider["openai-bailiab-api"].models), [
       "qwen3.7-max",
       "qwen3.7-max-256k",
+      "qwen3.7-max-512k",
       "qwen3.7-plus",
       "qwen3.7-plus-nothink",
       "qwen-latest-series-invite-beta-v34",
@@ -154,9 +155,28 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(Object.keys(config.provider["openai-bailian-token-plan"].models), [
       "qwen3.7-max",
       "qwen3.7-max-256k",
+      "qwen3.7-max-512k",
       "qwen3.7-plus",
       "qwen3.7-plus-nothink",
     ])
+    assert.deepEqual(Object.keys(config.provider["openai-token-plan-coding"].models), [
+      "qwen3.7-max",
+      "qwen3.7-max-512k",
+    ])
+    assert.equal(config.provider["openai-token-plan-coding"].name, "OpenAI Token-plan coding")
+    assert.equal(
+      config.provider["openai-token-plan-coding"].options.baseURL,
+      "http://127.0.0.1:49876/compatible-mode/v1",
+    )
+    assert.equal(
+      config.provider["openai-token-plan-coding"].options.headers["x-cache-proxy-upstream-base-url"],
+      "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    )
+    assert.deepEqual(config.provider["openai-token-plan-coding"].models["qwen3.7-max-512k"].limit, {
+      context: 512000,
+      output: 65536,
+    })
+    assert.equal(config.provider["openai-token-plan-coding"].models["qwen3.7-max"].limit, undefined)
     assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-max"].limit, undefined, "qwen3.7-max base model must not set limit; upstream enforces its own window")
     assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-256k"].limit, {
       context: 256000,
@@ -169,6 +189,10 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-256k"].limit, {
       context: 256000,
       output: 32768,
+    })
+    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-512k"].limit, {
+      context: 512000,
+      output: 65536,
     })
     assert.equal(config.provider["bailian-custom-cached"], undefined)
     assert.equal(config.provider.other.name, "Other provider")
