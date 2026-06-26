@@ -9,6 +9,7 @@ import { describe, test } from "node:test"
 import {
   listOpenCodeProviderChoices,
   readApiKey,
+  selectOpenCodeProvider,
   writeOpenCodeCredential,
 } from "../src/opencode-auth.mjs"
 
@@ -182,6 +183,60 @@ describe("OpenCode auth bootstrap", () => {
     assert.match(result.stdout, /credential stored for anthropic-idealab\b/)
     const auth = await readJson(authPath)
     assert.equal(auth["anthropic-idealab"].key, "sk-interactive")
+
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test("selectOpenCodeProvider throws when buffered input is exhausted (non-TTY EOF)", async () => {
+    const providers = [
+      { id: "openai-idealab", name: "OpenAI Idealab", npm: "@ai-sdk/openai-compatible" },
+    ]
+    let calls = 0
+    const question = async () => {
+      calls++
+      if (calls === 1) return ""
+      question.e = true
+      return ""
+    }
+    let output = ""
+    const outputWriter = { write: (chunk) => { output += chunk } }
+
+    await assert.rejects(
+      selectOpenCodeProvider({ providers, output: outputWriter, question }),
+      /input exhausted/,
+    )
+    assert.match(output, /Please enter a number from 1 to 1/)
+  }, { timeout: 5000 })
+
+  test("auth script exits quickly with non-zero status when stdin is empty", async () => {
+    const dir = await makeTempDir()
+    const configPath = join(dir, "opencode.json")
+    const authPath = join(dir, "auth.json")
+    await writeFile(configPath, JSON.stringify({
+      provider: {
+        "openai-idealab": { name: "OpenAI Idealab", npm: "@ai-sdk/openai-compatible" },
+      },
+    }))
+
+    const child = spawn(
+      process.execPath,
+      [
+        new URL("../bin/opencode-cache-proxy-auth.mjs", import.meta.url).pathname,
+        "--opencode-config", configPath,
+        "--auth-path", authPath,
+      ],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    )
+    child.stdin.end("")
+
+    const result = await new Promise((resolve) => {
+      let stderr = ""
+      child.stderr.on("data", (chunk) => { stderr += chunk })
+      child.on("close", (status) => resolve({ status, stderr }))
+    })
+
+    assert.notEqual(result.status, 0, `Expected non-zero exit, got ${result.status}`)
+    assert.match(result.stderr, /input exhausted|no provider selected/i)
 
     await rm(dir, { recursive: true, force: true })
   })

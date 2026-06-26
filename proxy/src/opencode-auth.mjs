@@ -66,14 +66,20 @@ const readAllInput = (input) => new Promise((resolve, reject) => {
 const createBufferedQuestion = (input, output) => {
   let lines
   let linesPromise
-  return async (prompt) => {
+  const q = async (prompt) => {
     output.write(prompt)
     if (!linesPromise) {
       linesPromise = readAllInput(input).then((data) => data.split(/\r?\n/))
     }
     lines ||= await linesPromise
-    return lines.length > 0 ? lines.shift() : ""
+    if (lines.length === 0) {
+      q.e = true
+      return ""
+    }
+    return lines.shift()
   }
+  q.e = false
+  return q
 }
 
 export const listOpenCodeProviderChoices = async ({
@@ -137,6 +143,9 @@ export const selectOpenCodeProvider = async ({
   if (question) {
     while (true) {
       const answer = (await question(`Select provider [1-${providers.length}]: `)).trim()
+      if (question.e) {
+        throw new Error("no provider selected (input exhausted)")
+      }
       const index = Number(answer)
       if (Number.isInteger(index) && index >= 1 && index <= providers.length) {
         return providers[index - 1].id
@@ -168,7 +177,13 @@ export const readApiKey = async ({
   signalTarget = process,
 } = {}) => {
   const prompt = `API key for ${providerId}: `
-  if (question) return (await question(prompt)).trim()
+  if (question) {
+    const answer = (await question(prompt)).trim()
+    if (question.e) {
+      throw new Error(`no API key provided for ${providerId} (input exhausted)`)
+    }
+    return answer
+  }
 
   if (!input.isTTY || typeof input.setRawMode !== "function") {
     const rl = createPromisesInterface({ input, output })
