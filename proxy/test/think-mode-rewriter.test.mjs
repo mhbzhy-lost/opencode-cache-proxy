@@ -49,17 +49,24 @@ describe("resolveThinkMode", () => {
   })
 
   test("qwen3.7-max context aliases rewrite to the upstream model", () => {
-    const r = resolveThinkMode("qwen3.7-max-256k")
+    const r = resolveThinkMode("qwen3.7-max-300k")
     assert.equal(r.upstreamModel, "qwen3.7-max")
     assert.equal(r.enableThinking, null)
-    assert.equal(r.alias, "qwen3.7-max-256k")
+    assert.equal(r.alias, "qwen3.7-max-300k")
+  })
+
+  test("qwen3.7-max-512k context alias rewrites to the upstream model", () => {
+    const r = resolveThinkMode("qwen3.7-max-512k")
+    assert.equal(r.upstreamModel, "qwen3.7-max")
+    assert.equal(r.enableThinking, null)
+    assert.equal(r.alias, "qwen3.7-max-512k")
   })
 
   test("DogFooding context aliases rewrite to the upstream model", () => {
-    const r = resolveThinkMode("Qwen3.7-Max-DogFooding-256k")
+    const r = resolveThinkMode("Qwen3.7-Max-DogFooding-300k")
     assert.equal(r.upstreamModel, "Qwen3.7-Max-DogFooding")
     assert.equal(r.enableThinking, null)
-    assert.equal(r.alias, "Qwen3.7-Max-DogFooding-256k")
+    assert.equal(r.alias, "Qwen3.7-Max-DogFooding-300k")
   })
 
   test("Invite Beta 256k context alias rewrites to the upstream model", () => {
@@ -123,7 +130,7 @@ describe("applyThinkModeRewrite", () => {
 
   test("rewrites qwen3.7-max context aliases without changing thinking mode", () => {
     const body = {
-      model: "qwen3.7-max-256k",
+      model: "qwen3.7-max-300k",
       enable_thinking: true,
       messages: [{ role: "user", content: "hi" }],
     }
@@ -131,7 +138,7 @@ describe("applyThinkModeRewrite", () => {
     assert.notEqual(out, body, "must clone")
     assert.equal(out.model, "qwen3.7-max")
     assert.equal(out.enable_thinking, true)
-    assert.equal(alias, "qwen3.7-max-256k")
+    assert.equal(alias, "qwen3.7-max-300k")
   })
 
   test("non-object body returns as-is", () => {

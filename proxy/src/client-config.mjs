@@ -51,7 +51,7 @@ const QWEN_MODEL_NAMES = {
 
 const QWEN_OPEN_CODE_MODELS = {
   "qwen3.7-max": { name: "Qwen 3.7 Max" },
-  "qwen3.7-max-256k": { name: "Qwen 3.7 Max (256k)", limit: { context: 256000, output: 32768 } },
+  "qwen3.7-max-300k": { name: "Qwen 3.7 Max (300k)", limit: { context: 300000, output: 32768 } },
   "qwen3.7-max-512k": { name: "Qwen 3.7 Max (512k)", limit: { context: 512000, output: 65536 } },
   "qwen3.7-plus": { name: "Qwen 3.7 Plus" },
   "qwen3.7-plus-nothink": { name: "Qwen 3.7 Plus (no thinking)" },
@@ -76,9 +76,9 @@ const IDEALAB_OPEN_CODE_MODELS = {
       nothink: { enable_thinking: false },
     },
   },
-  "Qwen3.7-Max-DogFooding-256k": {
-    name: "Qwen 3.7 Max DogFooding (256k)",
-    limit: { context: 256000, output: 32768 },
+  "Qwen3.7-Max-DogFooding-300k": {
+    name: "Qwen 3.7 Max DogFooding (300k)",
+    limit: { context: 300000, output: 32768 },
     options: { enable_thinking: true },
     variants: {
       nothink: { enable_thinking: false },
@@ -169,14 +169,17 @@ export const buildOpenCodeProvider = ({
   models,
 })
 
-const buildOpenCodeIdealabProvider = ({ port = DEFAULT_PORT } = {}) => ({
+const buildOpenCodeIdealabProvider = ({
+  port = DEFAULT_PORT,
+  markerStrategy = DEFAULT_MARKER_STRATEGY,
+} = {}) => ({
   npm: "@ai-sdk/openai-compatible",
   name: "OpenAI Idealab",
   options: {
     baseURL: `http://127.0.0.1:${port}/compatible-mode/v1`,
     headers: {
       "x-cache-proxy-upstream-base-url": DEFAULT_OPENAI_IDEALAB_UPSTREAM_BASE_URL,
-      "x-cache-proxy-marker-strategy": "none",
+      "x-cache-proxy-marker-strategy": markerStrategy,
     },
   },
   models: IDEALAB_OPEN_CODE_MODELS,
@@ -282,7 +285,7 @@ export const configureOpenCodeCacheProxy = async ({
     messages.push(`[provider] ${OPENCODE_TOKEN_PLAN_CODING_PROVIDER_ID} already up to date`)
   }
 
-  const desiredIdealabProvider = buildOpenCodeIdealabProvider({ port })
+  const desiredIdealabProvider = buildOpenCodeIdealabProvider({ port, markerStrategy })
   if (!jsonEqual(providers[OPENCODE_IDEALAB_PROVIDER_ID], desiredIdealabProvider)) {
     providers[OPENCODE_IDEALAB_PROVIDER_ID] = desiredIdealabProvider
     messages.push(`[provider] ${OPENCODE_IDEALAB_PROVIDER_ID} configured`)

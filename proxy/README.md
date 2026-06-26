@@ -167,8 +167,8 @@ arbitrary upstream forwarder.
 
 Each Qwen3 model is exposed twice in `openai-bailiab-api` and
 `openai-bailian-token-plan`. `openai-idealab` exposes only
-`Qwen3.7-Max-DogFooding` against the Idealab OpenAI endpoint, direct to upstream
-without this cache proxy.
+`Qwen3.7-Max-DogFooding` against the Idealab OpenAI endpoint, using the same
+`turn-stable` marker strategy as the bailian providers.
 
 - `qwen3.6-plus` / `qwen3.6-flash` / `qwen3.7-max` — model defaults
   (`enable_thinking=true`, `thinking_budget=max`); model self-adapts depth.

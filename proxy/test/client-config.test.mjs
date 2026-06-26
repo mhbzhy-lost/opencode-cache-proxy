@@ -81,8 +81,8 @@ describe("client cache proxy configuration", () => {
     )
     assert.equal(
       config.provider["openai-idealab"].options.headers["x-cache-proxy-marker-strategy"],
-      "none",
-      "Idealab must not have proxy-injected cache_control markers; upstream honors its own caching if any",
+      "turn-stable",
+      "Idealab uses the same turn-stable marker strategy as bailian providers",
     )
     const idealabModels = config.provider["openai-idealab"].models
     assert.equal(idealabModels["Qwen3.7-Max-DogFooding"].name, "Qwen 3.7 Max DogFooding")
@@ -91,8 +91,8 @@ describe("client cache proxy configuration", () => {
     assert.equal(idealabModels["Qwen3.7-Max-DogFooding"].variants.default, undefined, "DogFooding variants must not include a 'default' key; opencode TUI auto-adds 'Default' for the base model config, so an explicit 'default' key produces a duplicate entry")
     assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding"].options, { enable_thinking: true })
     assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding"].variants.nothink, { enable_thinking: false })
-    assert.equal(idealabModels["Qwen3.7-Max-DogFooding-256k"]?.name, "Qwen 3.7 Max DogFooding (256k)")
-    assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding-256k"]?.limit, { context: 256000, output: 32768 })
+    assert.equal(idealabModels["Qwen3.7-Max-DogFooding-300k"]?.name, "Qwen 3.7 Max DogFooding (300k)")
+    assert.deepEqual(idealabModels["Qwen3.7-Max-DogFooding-300k"]?.limit, { context: 300000, output: 32768 })
     assert.equal(config.provider["anthropic-idealab"].npm, "@ai-sdk/anthropic")
     assert.equal(config.provider["anthropic-idealab"].name, "Anthropic Idealab")
     assert.equal(
@@ -145,7 +145,7 @@ describe("client cache proxy configuration", () => {
     })
     assert.deepEqual(Object.keys(config.provider["openai-bailiab-api"].models), [
       "qwen3.7-max",
-      "qwen3.7-max-256k",
+      "qwen3.7-max-300k",
       "qwen3.7-max-512k",
       "qwen3.7-plus",
       "qwen3.7-plus-nothink",
@@ -154,7 +154,7 @@ describe("client cache proxy configuration", () => {
     ])
     assert.deepEqual(Object.keys(config.provider["openai-bailian-token-plan"].models), [
       "qwen3.7-max",
-      "qwen3.7-max-256k",
+      "qwen3.7-max-300k",
       "qwen3.7-max-512k",
       "qwen3.7-plus",
       "qwen3.7-plus-nothink",
@@ -178,16 +178,16 @@ describe("client cache proxy configuration", () => {
     })
     assert.equal(config.provider["openai-token-plan-coding"].models["qwen3.7-max"].limit, undefined)
     assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-max"].limit, undefined, "qwen3.7-max base model must not set limit; upstream enforces its own window")
-    assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-256k"].limit, {
-      context: 256000,
+    assert.deepEqual(config.provider["openai-bailiab-api"].models["qwen3.7-max-300k"].limit, {
+      context: 300000,
       output: 32768,
     })
     assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-plus"].name, "Qwen 3.7 Plus")
     assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-plus"].limit, undefined, "qwen3.7-plus base model must not set limit")
     assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-plus-nothink"].name, "Qwen 3.7 Plus (no thinking)")
     assert.equal(config.provider["openai-bailian-token-plan"].models["qwen3.7-max"].limit, undefined, "qwen3.7-max base model must not set limit; upstream enforces its own window")
-    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-256k"].limit, {
-      context: 256000,
+    assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-300k"].limit, {
+      context: 300000,
       output: 32768,
     })
     assert.deepEqual(config.provider["openai-bailian-token-plan"].models["qwen3.7-max-512k"].limit, {
@@ -242,8 +242,8 @@ describe("client cache proxy configuration", () => {
     )
     assert.equal(
       config.provider["openai-idealab"].options.headers["x-cache-proxy-marker-strategy"],
-      "none",
-      "Idealab must always use none strategy even when caller overrides other providers",
+      "fraction",
+      "Idealab uses the same marker strategy override as other OpenAI-compatible providers",
     )
     assert.equal(
       config.provider["anthropic-idealab"].options.headers["x-cache-proxy-upstream-base-url"],
