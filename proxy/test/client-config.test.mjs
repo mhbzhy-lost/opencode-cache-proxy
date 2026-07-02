@@ -119,10 +119,13 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(Object.keys(config.provider["anthropic-idealab"].models), [
       "claude-opus-4-6-200k",
       "claude-opus-4-6-1m",
+      "claude-opus-4-8-1m",
     ])
     assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].options, {
       effort: "high",
     })
+    assert.equal(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].reasoning, true)
+    assert.equal(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].variants, undefined)
     assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].limit, {
       context: 200000,
       output: 65536,
@@ -135,14 +138,9 @@ describe("client cache proxy configuration", () => {
       {
         "claude-opus-4-6-200k": 200000,
         "claude-opus-4-6-1m": 1000000,
+        "claude-opus-4-8-1m": 1000000,
       },
     )
-    assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].variants, {
-      low: { effort: "low" },
-      medium: { effort: "medium" },
-      high: { effort: "high" },
-      max: { effort: "max" },
-    })
     assert.deepEqual(Object.keys(config.provider["openai-bailiab-api"].models), [
       "qwen3.7-max",
       "qwen3.7-max-300k",
@@ -264,13 +262,10 @@ describe("client cache proxy configuration", () => {
     assert.deepEqual(Object.keys(config.provider["anthropic-idealab"].models), [
       "claude-opus-4-6-200k",
       "claude-opus-4-6-1m",
+      "claude-opus-4-8-1m",
     ])
-    assert.deepEqual(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].variants, {
-      low: { effort: "low" },
-      medium: { effort: "medium" },
-      high: { effort: "high" },
-      max: { effort: "max" },
-    })
+    assert.equal(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].reasoning, true)
+    assert.equal(config.provider["anthropic-idealab"].models["claude-opus-4-6-200k"].variants, undefined)
 
     await rm(dir, { recursive: true, force: true })
   })

@@ -49,6 +49,7 @@ test("install-opencode.sh configures OpenCode without requiring auth in --no-aut
   assert.deepEqual(Object.keys(config.provider["anthropic-idealab"].models), [
     "claude-opus-4-6-200k",
     "claude-opus-4-6-1m",
+    "claude-opus-4-8-1m",
   ])
   assert.ok(config.plugin.includes(join(repoRoot, "plugins")))
   assert.match(result.stdout, /OpenCode cache proxy configured/)

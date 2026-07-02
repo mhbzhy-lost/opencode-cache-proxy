@@ -276,6 +276,23 @@ describe("createAnthropicHandler", () => {
       assert.equal(response.status, 200)
       assert.equal(receivedBody.model, "claude-opus-4-6")
       assert.equal(records[0].model, "claude-opus-4-6-500k")
+
+      const futureResponse = await makeRequest(
+        `http://127.0.0.1:${proxyAddress.port}/apps/anthropic/v1/messages`,
+        {
+          headers: { "x-api-key": "sk-client" },
+          body: JSON.stringify({
+            model: "claude-opus-4-8-1m",
+            max_tokens: 10,
+            system: [{ type: "text", text: "stable" }],
+            messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          }),
+        },
+      )
+
+      assert.equal(futureResponse.status, 200)
+      assert.equal(receivedBody.model, "claude-opus-4-8")
+      assert.equal(records[1].model, "claude-opus-4-8-1m")
     } finally {
       await close(proxy)
       await close(upstream)

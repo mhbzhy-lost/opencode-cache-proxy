@@ -100,7 +100,7 @@ const shouldBypassCachePlanning = (cacheOptions) =>
 
 const resolveAnthropicUpstreamModel = (model) => {
   if (typeof model !== "string") return model
-  const match = model.match(/^(claude-opus-4-6)-(?:200k|300k|500k|1m)$/)
+  const match = model.match(/^(claude-opus-4-\d+)-(?:200k|300k|500k|1m)$/)
   return match ? match[1] : model
 }
 
