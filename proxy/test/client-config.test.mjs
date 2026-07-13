@@ -308,6 +308,10 @@ describe("client cache proxy configuration", () => {
     const dir = await makeTempDir()
     const configPath = join(dir, "opencode.json")
     const pluginDir = join(dir, "opencode", "plugins")
+    await writeFile(
+      configPath,
+      JSON.stringify({ plugin: ["/existing/plugin", join(repoRoot, "plugins")] }),
+    )
 
     const result = await configureOpenCodeCacheProxy({
       configPath,
@@ -321,7 +325,7 @@ describe("client cache proxy configuration", () => {
     const proxyLink = await lstat(join(dir, "opencode", "proxy"))
 
     assert.equal(result.changed, true)
-    assert.equal(config.plugin, undefined)
+    assert.deepEqual(config.plugin, ["/existing/plugin"])
     assert.equal(pluginLink.isSymbolicLink(), true)
     assert.equal(proxyLink.isSymbolicLink(), true)
     assert.equal(config.provider["openai-bailiab-api"].models["qwen3.7-max"].name, "Qwen 3.7 Max")

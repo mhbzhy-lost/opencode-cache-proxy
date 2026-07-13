@@ -316,6 +316,11 @@ export const configureOpenCodeCacheProxy = async ({
     }
   } else if (pluginMode === "symlink") {
     if (!pluginDir) throw new Error("pluginDir is required when pluginMode=symlink")
+    if (Array.isArray(config.plugin) && config.plugin.includes(pluginSourceDir)) {
+      config.plugin = config.plugin.filter((entry) => entry !== pluginSourceDir)
+      if (config.plugin.length === 0) delete config.plugin
+      messages.push(`[plugin] removed ${pluginSourceDir} from opencode plugin list`)
+    }
     changed = (await ensureSymlink({
       linkPath: join(pluginDir, "bailian-cache-proxy.js"),
       targetPath: join(repoRoot, "plugins", "bailian-cache-proxy.js"),
